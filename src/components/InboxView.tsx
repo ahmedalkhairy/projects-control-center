@@ -6,6 +6,7 @@ import {
   Trello,
   Mail,
   MessageCircle,
+  GitBranch,
   ExternalLink,
   Check,
   Trash2,
@@ -26,8 +27,10 @@ import {
 import type { Message, MessageSource, MessageStatus, Priority } from '../types'
 
 const SOURCE_ICONS: Record<MessageSource, LucideIcon> = {
-  jira: Trello,
-  email: Mail,
+  jira:     Trello,
+  github:   GitBranch,
+  gitlab:   GitBranch,
+  email:    Mail,
   whatsapp: MessageCircle,
 }
 
@@ -84,9 +87,11 @@ export default function InboxView() {
   }
 
   const SOURCE_TABS: { key: SourceFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'jira', label: 'Jira' },
-    { key: 'email', label: 'Email' },
+    { key: 'all',      label: 'All' },
+    { key: 'jira',     label: 'Jira' },
+    { key: 'github',   label: 'GitHub' },
+    { key: 'gitlab',   label: 'GitLab' },
+    { key: 'email',    label: 'Email' },
     { key: 'whatsapp', label: 'WhatsApp' },
   ]
 
@@ -171,8 +176,10 @@ export default function InboxView() {
                 <SourceIcon
                   size={12}
                   className={clsx(
-                    tab.key === 'jira' && 'text-blue-400',
-                    tab.key === 'email' && 'text-purple-400',
+                    tab.key === 'jira'     && 'text-blue-400',
+                    tab.key === 'github'   && 'text-slate-300',
+                    tab.key === 'gitlab'   && 'text-orange-400',
+                    tab.key === 'email'    && 'text-purple-400',
                     tab.key === 'whatsapp' && 'text-green-400'
                   )}
                 />

@@ -116,7 +116,7 @@ export async function syncGitHubRepo(repo: GitRepo): Promise<SyncResult> {
     // Pipeline run
     if (latestRun) {
       events.push({
-        id:        generateId(),
+        id:        `${repoId}-pipeline-${latestRun.id}`,
         repoId,
         type:      'pipeline',
         title:     latestRun.name ?? 'CI run',
@@ -242,7 +242,7 @@ export async function syncGitLabRepo(repo: GitRepo): Promise<SyncResult> {
     // Pipeline
     if (latestPipeline) {
       events.push({
-        id:        generateId(),
+        id:        `${repoId}-pipeline-${latestPipeline.id}`,
         repoId,
         type:      'pipeline',
         title:     `Pipeline #${latestPipeline.id}`,

@@ -642,24 +642,90 @@ export const useStore = create<AppState>()(
           const project = projects.find(p => p.id === repo.projectId)
           const projectName = project?.name ?? repo.displayName
           const appNotifs: AppNotification[] = []
+          const source = repo.provider === 'github' ? 'github' as const : 'gitlab' as const
 
-          // Failed pipeline notification
-          const pipelineEvent = result.events.find(e => e.type === 'pipeline' && e.status === 'failed')
+          // ── Pipeline notifications (success + failure) ──────────────────────
+          const pipelineEvent = result.events.find(e => e.type === 'pipeline')
           if (pipelineEvent) {
-            appNotifs.push({
-              id:          `pipeline-fail-${repo.id}-${pipelineEvent.branch ?? 'main'}`,
-              projectId:   repo.projectId,
-              projectName,
-              title:       `Pipeline failed — ${repo.displayName}`,
-              message:     `${pipelineEvent.title} · Branch: ${pipelineEvent.branch ?? ''} · by ${pipelineEvent.author}`,
-              type:        'error',
-              timestamp:   new Date().toISOString(),
-              read:        false,
-              url:         pipelineEvent.url,
+            const isFailed  = pipelineEvent.status === 'failed'
+            const isSuccess = pipelineEvent.status === 'success'
+
+            if (isFailed || isSuccess) {
+              const notifId = `pipeline-${pipelineEvent.id}`
+
+              appNotifs.push({
+                id:          notifId,
+                projectId:   repo.projectId,
+                projectName,
+                title:       isFailed
+                  ? `Pipeline failed — ${repo.displayName}`
+                  : `Pipeline passed — ${repo.displayName}`,
+                message:     `${pipelineEvent.title} · Branch: ${pipelineEvent.branch ?? ''} · by ${pipelineEvent.author}`,
+                type:        isFailed ? 'error' : 'success',
+                timestamp:   pipelineEvent.timestamp,
+                read:        false,
+                url:         pipelineEvent.url,
+              })
+
+              // Add to inbox as well
+              set(state => {
+                const existing = state.messages[repo.projectId] ?? []
+                if (existing.some(m => m.id === notifId)) return {}
+                const msg: Message = {
+                  id:           notifId,
+                  projectId:    repo.projectId,
+                  source,
+                  title:        isFailed
+                    ? `❌ Pipeline failed — ${pipelineEvent.branch ?? 'main'}`
+                    : `✅ Pipeline passed — ${pipelineEvent.branch ?? 'main'}`,
+                  body:         `${pipelineEvent.title} · by ${pipelineEvent.author} on ${repo.displayName}`,
+                  from:         pipelineEvent.author,
+                  timestamp:    pipelineEvent.timestamp,
+                  status:       'unread',
+                  priority:     isFailed ? 'high' : 'low',
+                  labels:       ['pipeline', isFailed ? 'failed' : 'success', pipelineEvent.branch ?? 'main'],
+                  externalLink: pipelineEvent.url,
+                }
+                return {
+                  messages: {
+                    ...state.messages,
+                    [repo.projectId]: [msg, ...existing],
+                  },
+                }
+              })
+            }
+          }
+
+          // ── Release notifications → inbox ───────────────────────────────────
+          const releaseEvents = result.events.filter(e => e.type === 'release')
+          for (const rel of releaseEvents.slice(0, 2)) {
+            const relId = `release-${rel.id}`
+            set(state => {
+              const existing = state.messages[repo.projectId] ?? []
+              if (existing.some(m => m.id === relId)) return {}
+              const msg: Message = {
+                id:           relId,
+                projectId:    repo.projectId,
+                source,
+                title:        `🚀 Release — ${rel.title}`,
+                body:         `New release published on ${repo.displayName} · by ${rel.author}`,
+                from:         rel.author,
+                timestamp:    rel.timestamp,
+                status:       'unread',
+                priority:     'medium',
+                labels:       ['release', repo.displayName],
+                externalLink: rel.url,
+              }
+              return {
+                messages: {
+                  ...state.messages,
+                  [repo.projectId]: [msg, ...(state.messages[repo.projectId] ?? [])],
+                },
+              }
             })
           }
 
-          // Open PRs / MRs
+          // ── Open PRs / MRs → app notifications ─────────────────────────────
           const prEvents = result.events.filter(
             e => (e.type === 'pull_request' || e.type === 'merge_request') &&
                  e.status === 'open' && e.number != null

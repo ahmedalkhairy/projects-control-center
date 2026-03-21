@@ -1,5 +1,5 @@
 export type NavSection = 'inbox' | 'tasks' | 'quick-actions' | 'repositories' | 'integrations' | 'settings'
-export type MessageSource = 'jira' | 'email' | 'whatsapp'
+export type MessageSource = 'jira' | 'github' | 'gitlab' | 'email' | 'whatsapp'
 export type MessageStatus = 'unread' | 'read' | 'handled'
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
 export type TaskStatus = 'todo' | 'in-progress' | 'done'

@@ -95,28 +95,34 @@ export function sourceColor(source: MessageSource): string {
 
 export function sourceBg(source: MessageSource): string {
   switch (source) {
-    case 'jira': return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-    case 'email': return 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-    case 'whatsapp': return 'bg-green-500/20 text-green-400 border-green-500/30'
-    default: return 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+    case 'jira':    return 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+    case 'github':  return 'bg-slate-500/20 text-slate-300 border-slate-500/30'
+    case 'gitlab':  return 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+    case 'email':   return 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+    case 'whatsapp':return 'bg-green-500/20 text-green-400 border-green-500/30'
+    default:        return 'bg-slate-500/20 text-slate-400 border-slate-500/30'
   }
 }
 
 export function sourceIcon(source: MessageSource): string {
   switch (source) {
-    case 'jira': return 'Trello'
-    case 'email': return 'Mail'
-    case 'whatsapp': return 'MessageCircle'
-    default: return 'MessageSquare'
+    case 'jira':    return 'Trello'
+    case 'github':  return 'GitBranch'
+    case 'gitlab':  return 'GitBranch'
+    case 'email':   return 'Mail'
+    case 'whatsapp':return 'MessageCircle'
+    default:        return 'MessageSquare'
   }
 }
 
 export function sourceLabel(source: MessageSource): string {
   switch (source) {
-    case 'jira': return 'Jira'
-    case 'email': return 'Email'
-    case 'whatsapp': return 'WhatsApp'
-    default: return source
+    case 'jira':    return 'Jira'
+    case 'github':  return 'GitHub'
+    case 'gitlab':  return 'GitLab'
+    case 'email':   return 'Email'
+    case 'whatsapp':return 'WhatsApp'
+    default:        return source
   }
 }
 
