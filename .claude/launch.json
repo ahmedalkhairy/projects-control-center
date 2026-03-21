@@ -1,0 +1,31 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Control Center (Vite Dev)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--host", "--port", "3000"],
+      "port": 3000
+    },
+    {
+      "name": "Control Center (Vite Preview)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "preview"],
+      "port": 4173
+    },
+    {
+      "name": "Deploy Manager (FastAPI)",
+      "cwd": "D:\\pstc\\deploy_manager",
+      "runtimeExecutable": "C:\\laragon\\bin\\python\\python-3.10\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "main:app", "--reload", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "Webhook Receiver (FastAPI)",
+      "cwd": "D:\\pstc\\pc-cicd-webhook-app",
+      "runtimeExecutable": "C:\\laragon\\bin\\python\\python-3.10\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.webhook_receiver:app", "--reload", "--port", "8080"],
+      "port": 8080
+    }
+  ]
+}
