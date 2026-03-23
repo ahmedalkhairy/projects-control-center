@@ -29,6 +29,13 @@ export interface Message {
   externalLink?: string
 }
 
+export interface TaskReminder {
+  enabled: boolean
+  mode: 'once' | 'repeat'
+  nextAt: string             // ISO — when to fire next
+  intervalMinutes?: number   // repeat mode only
+}
+
 export interface Task {
   id: string
   projectId: string
@@ -44,6 +51,7 @@ export interface Task {
   tags?: string[]
   fromMessageId?: string
   attachments?: string[]   // base64 data URLs
+  reminder?: TaskReminder
 }
 
 export interface QuickAction {

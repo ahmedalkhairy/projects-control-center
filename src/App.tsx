@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useStore } from './store'
-import { requestDesktopPermission } from './utils'
+import { requestDesktopPermission, sendDesktopNotification } from './utils'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import InboxView from './components/InboxView'
@@ -17,6 +17,7 @@ export default function App() {
   const {
     activeSection, searchOpen, taskModalOpen, createProjectOpen, setSearchOpen,
     integrations, syncJiraIntegration, syncJiraNotifications, jiraSyncInterval,
+    tasks, projects, updateTask,
   } = useStore()
 
   useEffect(() => { requestDesktopPermission() }, [])
@@ -34,6 +35,44 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [setSearchOpen])
+
+  // Keep refs so the reminder interval always reads latest state without restarting
+  const tasksRef    = useRef(tasks)
+  const projectsRef = useRef(projects)
+  const updateTaskRef = useRef(updateTask)
+  useEffect(() => { tasksRef.current = tasks },       [tasks])
+  useEffect(() => { projectsRef.current = projects }, [projects])
+  useEffect(() => { updateTaskRef.current = updateTask }, [updateTask])
+
+  // Reminder scheduler — checks every 60 s
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date()
+      const allTasks = Object.values(tasksRef.current).flat()
+      for (const task of allTasks) {
+        const r = task.reminder
+        if (!r?.enabled || task.status === 'done') continue
+        if (new Date(r.nextAt) > now) continue
+
+        const project = projectsRef.current.find(p => p.id === task.projectId)
+        sendDesktopNotification(
+          `Reminder: ${task.title}`,
+          project ? `Project: ${project.name}` : '',
+          'info',
+        )
+
+        if (r.mode === 'once') {
+          updateTaskRef.current(task.id, { reminder: { ...r, enabled: false } })
+        } else {
+          const nextAt = new Date(Date.now() + (r.intervalMinutes ?? 60) * 60_000).toISOString()
+          updateTaskRef.current(task.id, { reminder: { ...r, nextAt } })
+        }
+      }
+    }
+
+    const timer = setInterval(tick, 60_000)
+    return () => clearInterval(timer)
+  }, []) // runs once — reads latest state via refs
 
   // Auto-sync all enabled Jira integrations on the configured interval
   useEffect(() => {

@@ -12,8 +12,11 @@ import {
   ExternalLink,
   Calendar,
   Tag,
+  Bell,
+  X,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { format } from 'date-fns'
 import {
   priorityDot,
   priorityBg,
@@ -22,10 +25,25 @@ import {
   formatDate,
   generateId,
 } from '../utils'
-import type { Task, TaskStatus, Priority } from '../types'
+import type { Task, TaskStatus, Priority, TaskReminder } from '../types'
+
+// ─── Reminder helpers ─────────────────────────────────────────────────────────
+
+function minutesToCustom(minutes: number): [number, 'minutes' | 'hours' | 'days'] {
+  if (minutes >= 1440 && minutes % 1440 === 0) return [minutes / 1440, 'days']
+  if (minutes >= 60 && minutes % 60 === 0) return [minutes / 60, 'hours']
+  return [minutes, 'minutes']
+}
+
+function fmtInterval(minutes: number): string {
+  if (minutes >= 1440 && minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes} min`
+}
 
 type ViewMode = 'list' | 'kanban'
 type TabFilter = 'all' | TaskStatus
+type TypeFilter = 'all' | 'local' | 'jira'
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'todo', label: 'Todo', color: 'text-slate-400' },
@@ -47,14 +65,17 @@ export default function TasksView() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [tabFilter, setTabFilter] = useState<TabFilter>('all')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [quickCreate, setQuickCreate] = useState('')
   const quickCreateRef = useRef<HTMLInputElement>(null)
+  const [reminderTaskId, setReminderTaskId] = useState<string | null>(null)
 
   const projectTasks = tasks[activeProjectId] ?? []
 
   const filtered = projectTasks.filter(t => {
-    if (tabFilter === 'all') return true
-    return t.status === tabFilter
+    if (tabFilter !== 'all' && t.status !== tabFilter) return false
+    if (typeFilter !== 'all' && t.type !== typeFilter) return false
+    return true
   })
 
   const totalActive = projectTasks.filter(t => t.status !== 'done').length
@@ -81,8 +102,22 @@ export default function TasksView() {
     { key: 'done', label: 'Done' },
   ]
 
+  const reminderTask = reminderTaskId ? (tasks[activeProjectId] ?? []).find(t => t.id === reminderTaskId) ?? null : null
+
   return (
     <div className="p-6">
+      {/* Reminder modal */}
+      {reminderTask && (
+        <ReminderModal
+          task={reminderTask}
+          onClose={() => setReminderTaskId(null)}
+          onSave={reminder => {
+            updateTask(reminderTask.id, { reminder })
+            setReminderTaskId(null)
+          }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
@@ -151,6 +186,8 @@ export default function TasksView() {
           filtered={filtered}
           tabFilter={tabFilter}
           setTabFilter={setTabFilter}
+          typeFilter={typeFilter}
+          setTypeFilter={setTypeFilter}
           TAB_ITEMS={TAB_ITEMS}
           quickCreate={quickCreate}
           setQuickCreate={setQuickCreate}
@@ -161,6 +198,7 @@ export default function TasksView() {
           onDelete={deleteTask}
           onStatusChange={(id, status) => updateTask(id, { status })}
           onMove={moveTaskToProject}
+          onReminderOpen={setReminderTaskId}
         />
       ) : (
         <KanbanView
@@ -170,6 +208,7 @@ export default function TasksView() {
           onEdit={openTaskModal}
           onDelete={deleteTask}
           onStatusChange={(id, status) => updateTask(id, { status })}
+          onReminderOpen={setReminderTaskId}
           onAdd={() =>
             openTaskModal({
               id: '',
@@ -194,6 +233,8 @@ interface ListViewProps {
   filtered: Task[]
   tabFilter: TabFilter
   setTabFilter: (f: TabFilter) => void
+  typeFilter: TypeFilter
+  setTypeFilter: (f: TypeFilter) => void
   TAB_ITEMS: { key: TabFilter; label: string }[]
   quickCreate: string
   setQuickCreate: (v: string) => void
@@ -204,6 +245,7 @@ interface ListViewProps {
   onDelete: (id: string) => void
   onStatusChange: (id: string, status: TaskStatus) => void
   onMove: (taskId: string, targetProjectId: string) => void
+  onReminderOpen: (taskId: string) => void
 }
 
 function ListView({
@@ -211,6 +253,8 @@ function ListView({
   filtered,
   tabFilter,
   setTabFilter,
+  typeFilter,
+  setTypeFilter,
   TAB_ITEMS,
   quickCreate,
   setQuickCreate,
@@ -221,34 +265,73 @@ function ListView({
   onDelete,
   onStatusChange,
   onMove,
+  onReminderOpen,
 }: ListViewProps) {
+  const TYPE_ITEMS: { key: TypeFilter; label: string; activeClass: string }[] = [
+    { key: 'all',   label: 'All',   activeClass: 'bg-slate-800 text-slate-100 border-slate-700' },
+    { key: 'local', label: 'Local', activeClass: 'bg-slate-700/60 text-slate-300 border-slate-600' },
+    { key: 'jira',  label: 'Jira',  activeClass: 'bg-blue-600/20 text-blue-400 border-blue-600/40' },
+  ]
+
   return (
     <div>
-      {/* Tabs */}
-      <div className="flex items-center gap-1 mb-4">
-        {TAB_ITEMS.map(tab => {
-          const count =
-            tab.key === 'all'
-              ? tasks.length
-              : tasks.filter(t => t.status === tab.key).length
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setTabFilter(tab.key)}
-              className={clsx(
-                'px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
-                tabFilter === tab.key
-                  ? 'bg-slate-800 text-slate-100 border border-slate-700'
-                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
-              )}
-            >
-              {tab.label}
-              <span className="text-xs bg-slate-700/80 text-slate-400 px-1.5 py-0.5 rounded">
-                {count}
-              </span>
-            </button>
-          )
-        })}
+      {/* Tabs row: status on left, type on right */}
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-1">
+          {TAB_ITEMS.map(tab => {
+            const count =
+              tab.key === 'all'
+                ? tasks.filter(t => typeFilter === 'all' || t.type === typeFilter).length
+                : tasks.filter(t => t.status === tab.key && (typeFilter === 'all' || t.type === typeFilter)).length
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setTabFilter(tab.key)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
+                  tabFilter === tab.key
+                    ? 'bg-slate-800 text-slate-100 border border-slate-700'
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+                )}
+              >
+                {tab.label}
+                <span className="text-xs bg-slate-700/80 text-slate-400 px-1.5 py-0.5 rounded">
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Type filter */}
+        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+          {TYPE_ITEMS.map(item => {
+            const count =
+              item.key === 'all'
+                ? tasks.filter(t => tabFilter === 'all' || t.status === tabFilter).length
+                : tasks.filter(t => t.type === item.key && (tabFilter === 'all' || t.status === tabFilter)).length
+            return (
+              <button
+                key={item.key}
+                onClick={() => setTypeFilter(item.key)}
+                className={clsx(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all border',
+                  typeFilter === item.key
+                    ? item.activeClass
+                    : 'text-slate-500 hover:text-slate-300 border-transparent',
+                )}
+              >
+                {item.label}
+                <span className={clsx(
+                  'text-[10px] px-1 py-0.5 rounded font-mono',
+                  typeFilter === item.key ? 'bg-slate-900/50' : 'bg-slate-800 text-slate-500',
+                )}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Quick create */}
@@ -290,6 +373,7 @@ function ListView({
               onDelete={() => onDelete(task.id)}
               onStatusChange={status => onStatusChange(task.id, status)}
               onMove={targetId => onMove(task.id, targetId)}
+              onReminderOpen={() => onReminderOpen(task.id)}
             />
           ))}
         </div>
@@ -308,9 +392,10 @@ interface TaskRowProps {
   onDelete: () => void
   onStatusChange: (status: TaskStatus) => void
   onMove: (targetProjectId: string) => void
+  onReminderOpen: () => void
 }
 
-function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onMove }: TaskRowProps) {
+function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onMove, onReminderOpen }: TaskRowProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const isDone = task.status === 'done'
@@ -421,6 +506,23 @@ function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onM
         {task.status}
       </span>
 
+      {/* Reminder bell */}
+      <button
+        onClick={onReminderOpen}
+        className={clsx(
+          'p-1.5 rounded transition-all flex-shrink-0',
+          task.reminder?.enabled
+            ? 'text-violet-400 opacity-100'
+            : 'text-slate-600 hover:text-violet-400 hover:bg-slate-700 opacity-0 group-hover:opacity-100',
+        )}
+        aria-label="Set reminder"
+        title={task.reminder?.enabled
+          ? `Reminder: ${task.reminder.mode === 'once' ? format(new Date(task.reminder.nextAt), 'MMM d, HH:mm') : `Every ${fmtInterval(task.reminder.intervalMinutes ?? 60)}`}`
+          : 'Add reminder'}
+      >
+        <Bell size={14} />
+      </button>
+
       {/* Menu */}
       <div className="relative flex-shrink-0">
         <button
@@ -495,10 +597,11 @@ interface KanbanViewProps {
   onEdit: (task: Task) => void
   onDelete: (id: string) => void
   onStatusChange: (id: string, status: TaskStatus) => void
+  onReminderOpen: (taskId: string) => void
   onAdd: () => void
 }
 
-function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStatusChange, onAdd }: KanbanViewProps) {
+function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStatusChange, onReminderOpen, onAdd }: KanbanViewProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
 
@@ -573,6 +676,7 @@ function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStat
                   onDragEnd={handleDragEnd}
                   onEdit={() => onEdit(task)}
                   onDelete={() => onDelete(task.id)}
+                  onReminderOpen={() => onReminderOpen(task.id)}
                 />
               ))}
               {colTasks.length === 0 && !isDragOver && (
@@ -606,9 +710,10 @@ interface KanbanCardProps {
   onDragEnd: () => void
   onEdit: () => void
   onDelete: () => void
+  onReminderOpen: () => void
 }
 
-function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete }: KanbanCardProps) {
+function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete, onReminderOpen }: KanbanCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const overdue = task.dueDate && task.status !== 'done' && isOverdue(task.dueDate)
 
@@ -652,6 +757,16 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
                 >
                   <Edit size={12} className="text-slate-500" />
                   Edit
+                </button>
+                <button
+                  onClick={() => { onReminderOpen(); setMenuOpen(false) }}
+                  className={clsx(
+                    'w-full flex items-center gap-2 px-3 py-1.5 hover:bg-slate-700',
+                    task.reminder?.enabled ? 'text-violet-400' : 'text-slate-300',
+                  )}
+                >
+                  <Bell size={12} className={task.reminder?.enabled ? 'text-violet-400' : 'text-slate-500'} />
+                  Reminder
                 </button>
                 <button
                   onClick={() => { onDelete(); setMenuOpen(false) }}
@@ -702,6 +817,173 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Reminder Modal ───────────────────────────────────────────────────────────
+
+interface ReminderModalProps {
+  task: Task
+  onClose: () => void
+  onSave: (reminder: TaskReminder | undefined) => void
+}
+
+function ReminderModal({ task, onClose, onSave }: ReminderModalProps) {
+  const existing = task.reminder
+  const initMins = existing?.intervalMinutes ?? 60
+  const [initCv, initCu] = minutesToCustom(initMins)
+
+  const [mode,          setMode]          = useState<'once' | 'repeat'>(existing?.mode ?? 'once')
+  const [nextAt,        setNextAt]        = useState(existing?.nextAt ?? new Date(Date.now() + 60 * 60_000).toISOString())
+  const [intervalMins,  setIntervalMins]  = useState(initMins)
+  const [customValue,   setCustomValue]   = useState(initCv)
+  const [customUnit,    setCustomUnit]    = useState<'minutes' | 'hours' | 'days'>(initCu)
+
+  function applyMinutes(mins: number) {
+    setNextAt(new Date(Date.now() + mins * 60_000).toISOString())
+    setIntervalMins(mins)
+    const [v, u] = minutesToCustom(mins)
+    setCustomValue(v)
+    setCustomUnit(u)
+  }
+
+  const ONCE_PRESETS    = [{ label: '30 min', minutes: 30 }, { label: '1 hour', minutes: 60 }, { label: '2 hours', minutes: 120 }, { label: 'Tomorrow', minutes: 1440 }]
+  const REPEAT_PRESETS  = [{ label: '30 min', minutes: 30 }, { label: '1 hour', minutes: 60 }, { label: '4 hours', minutes: 240 }, { label: 'Daily', minutes: 1440 }]
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="w-full max-w-sm bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Bell size={15} className="text-violet-400" />
+            <h2 className="text-sm font-semibold text-slate-200">Set Reminder</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Task title */}
+        <div className="px-5 pt-4 pb-1">
+          <p className="text-xs text-slate-500 truncate">{task.title}</p>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 pb-5 space-y-3">
+
+          {/* Mode tabs */}
+          <div className="flex gap-1.5">
+            {(['once', 'repeat'] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={clsx(
+                  'flex-1 py-2 text-xs font-medium rounded-lg border transition-all',
+                  mode === m
+                    ? 'bg-violet-600/20 border-violet-600/50 text-violet-400'
+                    : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50',
+                )}
+              >
+                {m === 'once' ? 'One-time' : 'Repeat'}
+              </button>
+            ))}
+          </div>
+
+          {/* Presets */}
+          <div className="flex flex-wrap gap-1.5">
+            {(mode === 'once' ? ONCE_PRESETS : REPEAT_PRESETS).map(p => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyMinutes(p.minutes)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Custom */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 shrink-0">
+              {mode === 'once' ? 'In' : 'Every'}
+            </span>
+            <input
+              type="number"
+              min={1}
+              value={customValue}
+              onChange={e => {
+                const v = Math.max(1, parseInt(e.target.value) || 1)
+                const mins = v * (customUnit === 'minutes' ? 1 : customUnit === 'hours' ? 60 : 1440)
+                setCustomValue(v)
+                setNextAt(new Date(Date.now() + mins * 60_000).toISOString())
+                setIntervalMins(mins)
+              }}
+              className="input text-sm w-16"
+            />
+            <select
+              value={customUnit}
+              onChange={e => {
+                const u = e.target.value as 'minutes' | 'hours' | 'days'
+                const mins = customValue * (u === 'minutes' ? 1 : u === 'hours' ? 60 : 1440)
+                setCustomUnit(u)
+                setNextAt(new Date(Date.now() + mins * 60_000).toISOString())
+                setIntervalMins(mins)
+              }}
+              className="input text-sm flex-1"
+            >
+              <option value="minutes">minutes</option>
+              <option value="hours">hours</option>
+              <option value="days">days</option>
+            </select>
+          </div>
+
+          {/* Preview */}
+          <p className="text-[11px] text-violet-400/80 bg-violet-500/5 border border-violet-500/10 rounded-lg px-3 py-2">
+            {mode === 'once'
+              ? `Fires at: ${format(new Date(nextAt), 'MMM d, yyyy — HH:mm')}`
+              : `Every ${fmtInterval(intervalMins)} — first at ${format(new Date(nextAt), 'MMM d, HH:mm')}`
+            }
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-800 bg-slate-950/30">
+          {existing?.enabled ? (
+            <button
+              onClick={() => onSave(undefined)}
+              className="text-xs text-red-500 hover:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+            >
+              Remove reminder
+            </button>
+          ) : <div />}
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="btn-secondary text-sm py-2">Cancel</button>
+            <button
+              onClick={() => onSave({
+                enabled: true,
+                mode,
+                nextAt,
+                intervalMinutes: mode === 'repeat' ? intervalMins : undefined,
+              })}
+              className="btn-primary flex items-center gap-1.5 text-sm py-2"
+            >
+              <Bell size={13} />
+              Save Reminder
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
