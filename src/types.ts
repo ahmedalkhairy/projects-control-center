@@ -1,10 +1,10 @@
-export type NavSection = 'inbox' | 'tasks' | 'quick-actions' | 'repositories' | 'integrations' | 'settings'
-export type MessageSource = 'jira' | 'github' | 'gitlab' | 'email' | 'whatsapp'
+export type NavSection = 'inbox' | 'tasks' | 'quick-actions' | 'repositories' | 'integrations' | 'settings' | 'focus' | 'notes' | 'debt' | 'standup' | 'milestones' | 'digest' | 'ai'
+export type MessageSource = 'jira' | 'github' | 'gitlab' | 'email' | 'whatsapp' | 'gitlab-integration'
 export type MessageStatus = 'unread' | 'read' | 'handled'
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
 export type TaskStatus = 'todo' | 'in-progress' | 'done'
-export type TaskType = 'local' | 'jira'
-export type IntegrationType = 'jira' | 'email' | 'whatsapp'
+export type TaskType = 'local' | 'jira' | 'gitlab'
+export type IntegrationType = 'jira' | 'email' | 'whatsapp' | 'gitlab'
 
 export interface Project {
   id: string
@@ -47,11 +47,14 @@ export interface Task {
   type: TaskType
   jiraKey?: string
   jiraLink?: string
+  gitlabIid?: number
+  gitlabLink?: string
   createdAt: string
   tags?: string[]
   fromMessageId?: string
   attachments?: string[]   // base64 data URLs
   reminder?: TaskReminder
+  completedAt?: string     // ISO — set when status transitions to 'done'
 }
 
 export interface QuickAction {
@@ -131,6 +134,62 @@ export interface GitRepo {
   openIssues: number
   pipelineStatus?: GitEventStatus
   stars?: number
+}
+
+// ─── Meeting Notes ────────────────────────────────────────────────────────────
+
+export interface MeetingNote {
+  id: string
+  projectId: string
+  title: string
+  content: string
+  createdAt: string
+  updatedAt: string
+  extractedTaskIds: string[]
+}
+
+// ─── Milestones ───────────────────────────────────────────────────────────────
+
+export type MilestoneStatus = 'on-track' | 'at-risk' | 'delayed' | 'completed'
+
+export interface Milestone {
+  id: string
+  projectId: string
+  title: string
+  description?: string
+  dueDate: string
+  status: MilestoneStatus
+  linkedTaskIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+// ─── Tech Debt ────────────────────────────────────────────────────────────────
+
+export type TechDebtCategory =
+  | 'code-quality'
+  | 'architecture'
+  | 'testing'
+  | 'security'
+  | 'performance'
+  | 'documentation'
+  | 'dependencies'
+
+export type TechDebtEffort = 'small' | 'medium' | 'large' | 'epic'
+
+export interface TechDebtItem {
+  id: string
+  projectId: string
+  title: string
+  description?: string
+  category: TechDebtCategory
+  priority: Priority
+  effort: TechDebtEffort
+  status: 'open' | 'in-progress' | 'resolved'
+  affectedArea?: string
+  taskId?: string        // if converted to a task
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────

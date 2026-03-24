@@ -12,11 +12,19 @@ import SettingsView from './components/SettingsView'
 import GlobalSearch from './components/GlobalSearch'
 import TaskModal from './components/TaskModal'
 import CreateProjectModal from './components/CreateProjectModal'
+import FocusView from './components/FocusView'
+import NotesView from './components/NotesView'
+import TechDebtView from './components/TechDebtView'
+import StandupView from './components/StandupView'
+import MilestonesView from './components/MilestonesView'
+import WeeklyDigestView from './components/WeeklyDigestView'
+import AIAssistantView from './components/AIAssistantView'
 
 export default function App() {
   const {
     activeSection, searchOpen, taskModalOpen, createProjectOpen, setSearchOpen,
     integrations, syncJiraIntegration, syncJiraNotifications, jiraSyncInterval,
+    syncGitLabIntegration, syncGitLabNotifications,
     tasks, projects, updateTask,
   } = useStore()
 
@@ -94,12 +102,39 @@ export default function App() {
     return () => clearInterval(timer)
   }, [jiraSyncInterval, integrations, syncJiraIntegration, syncJiraNotifications])
 
+  // Auto-sync all enabled GitLab integrations (same interval as Jira)
+  useEffect(() => {
+    if (jiraSyncInterval <= 0) return
+
+    const allGitLabIntegrations = Object.values(integrations)
+      .flat()
+      .filter(i => i.type === 'gitlab' && i.enabled)
+
+    if (allGitLabIntegrations.length === 0) return
+
+    const timer = setInterval(() => {
+      for (const integration of allGitLabIntegrations) {
+        syncGitLabIntegration(integration.id)
+        syncGitLabNotifications(integration.id)
+      }
+    }, jiraSyncInterval * 1000)
+
+    return () => clearInterval(timer)
+  }, [jiraSyncInterval, integrations, syncGitLabIntegration, syncGitLabNotifications])
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100 min-w-[1200px]">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
         <Header />
         <main className="flex-1 overflow-y-auto">
+          {activeSection === 'focus'      && <FocusView />}
+          {activeSection === 'notes'      && <NotesView />}
+          {activeSection === 'debt'       && <TechDebtView />}
+          {activeSection === 'standup'    && <StandupView />}
+          {activeSection === 'milestones' && <MilestonesView />}
+          {activeSection === 'digest'     && <WeeklyDigestView />}
+          {activeSection === 'ai'    && <AIAssistantView />}
           {activeSection === 'inbox' && <InboxView />}
           {activeSection === 'tasks' && <TasksView />}
           {activeSection === 'quick-actions' && <QuickActionsView />}

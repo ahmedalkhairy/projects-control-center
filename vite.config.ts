@@ -85,10 +85,89 @@ function jiraProxyPlugin(): Plugin {
   }
 }
 
+// ─── GitLab Proxy Plugin ──────────────────────────────────────────────────────
+// Same pattern as jiraProxyPlugin — forwards requests to a GitLab instance.
+// Uses Bearer token auth (PAT) instead of Basic auth.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function gitlabProxyPlugin(): Plugin {
+  return {
+    name: 'gitlab-proxy',
+    configureServer(server) {
+      server.middlewares.use('/api/gitlab-proxy', (req, res) => {
+        const gitlabBaseUrl = req.headers['x-gitlab-url']   as string | undefined
+        const token         = req.headers['x-gitlab-token'] as string | undefined
+
+        if (!gitlabBaseUrl) {
+          res.statusCode = 400
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'Missing x-gitlab-url header' }))
+          return
+        }
+
+        const gitlabPath = req.url || '/'
+
+        let normalizedBase = gitlabBaseUrl.trim()
+        if (!/^https?:\/\//i.test(normalizedBase)) {
+          normalizedBase = 'https://' + normalizedBase
+        }
+
+        let targetUrl: URL
+        try {
+          targetUrl = new URL(normalizedBase.replace(/\/$/, '') + gitlabPath)
+        } catch {
+          res.statusCode = 400
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: `Invalid GitLab URL: "${gitlabBaseUrl}"` }))
+          return
+        }
+
+        const isHttps = targetUrl.protocol === 'https:'
+        const lib     = isHttps ? https : http
+
+        const options: http.RequestOptions = {
+          hostname:           targetUrl.hostname,
+          port:               targetUrl.port || (isHttps ? 443 : 80),
+          path:               targetUrl.pathname + targetUrl.search,
+          method:             req.method ?? 'GET',
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Accept':        'application/json',
+            'Content-Type':  'application/json',
+          },
+          rejectUnauthorized: false,
+        }
+
+        const proxyReq = lib.request(options, (proxyRes) => {
+          res.statusCode = proxyRes.statusCode ?? 200
+          res.setHeader('Content-Type', proxyRes.headers['content-type'] ?? 'application/json')
+          proxyRes.pipe(res)
+        })
+
+        proxyReq.setTimeout(15000, () => {
+          proxyReq.destroy()
+          res.statusCode = 504
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: 'GitLab request timed out after 15s' }))
+        })
+
+        proxyReq.on('error', (err: Error) => {
+          res.statusCode = 502
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: err.message }))
+        })
+
+        req.pipe(proxyReq)
+      })
+    },
+  }
+}
+
 // ─── Vite config ──────────────────────────────────────────────────────────────
+// Note: Gemini API supports browser CORS natively — no proxy needed.
 
 export default defineConfig({
-  plugins: [react(), jiraProxyPlugin()],
+  plugins: [react(), jiraProxyPlugin(), gitlabProxyPlugin()],
   base: './',   // required for Electron — loads assets with relative paths
   server: {
     port: 3000,

@@ -1,4 +1,5 @@
 import { useStore, getUnreadCount, getTaskCount, getRepoCount } from '../store'
+import { MODULE_DEFS } from '../modules'
 import type { LucideIcon } from 'lucide-react'
 import {
   Zap,
@@ -13,17 +14,31 @@ import {
   Moon,
   Activity,
   GitBranch,
+  Target,
+  NotebookPen,
+  Wrench,
+  ClipboardList,
+  Flag,
+  BarChart3,
+  Sparkles,
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { NavSection } from '../types'
 
-const NAV_ITEMS: { section: NavSection; label: string; icon: LucideIcon }[] = [
-  { section: 'inbox', label: 'Inbox', icon: Inbox },
-  { section: 'tasks', label: 'Tasks', icon: CheckSquare },
-  { section: 'quick-actions', label: 'Quick Actions', icon: Bolt },
-  { section: 'repositories', label: 'Repositories', icon: GitBranch },
-  { section: 'integrations', label: 'Integrations', icon: Link2 },
-  { section: 'settings', label: 'Settings', icon: Settings },
+const NAV_ITEMS: { section: NavSection; label: string; icon: LucideIcon; group?: string }[] = [
+  { section: 'focus',        label: 'Focus',        icon: Target },
+  { section: 'inbox',        label: 'Inbox',        icon: Inbox },
+  { section: 'tasks',        label: 'Tasks',        icon: CheckSquare },
+  { section: 'notes',        label: 'Notes',        icon: NotebookPen },
+  { section: 'debt',         label: 'Tech Debt',    icon: Wrench },
+  { section: 'standup',      label: 'Standup',      icon: ClipboardList,  group: 'Reports' },
+  { section: 'milestones',   label: 'Milestones',   icon: Flag,           group: 'Reports' },
+  { section: 'digest',       label: 'Weekly Digest',icon: BarChart3,      group: 'Reports' },
+  { section: 'ai',           label: 'AI Assistant', icon: Sparkles,      group: 'Project' },
+  { section: 'quick-actions',label: 'Quick Actions',icon: Bolt,           group: 'Project' },
+  { section: 'repositories', label: 'Repositories', icon: GitBranch,      group: 'Project' },
+  { section: 'integrations', label: 'Integrations', icon: Link2,          group: 'Project' },
+  { section: 'settings',     label: 'Settings',     icon: Settings,       group: 'Project' },
 ]
 
 export default function Sidebar() {
@@ -34,10 +49,27 @@ export default function Sidebar() {
     messages,
     tasks,
     repos,
+    focusTaskIds,
+    notes,
+    techDebt,
+    milestones,
+    enabledModules,
     setActiveProject,
     setActiveSection,
     setCreateProjectOpen,
   } = useStore()
+
+  // If the active section was disabled, fall back to inbox
+  const coreKeys = MODULE_DEFS.filter(m => m.core).map(m => m.key)
+  const isEnabled = (key: string) =>
+    key === 'settings' || coreKeys.includes(key as never) || enabledModules[key] !== false
+
+  if (!isEnabled(activeSection)) {
+    setActiveSection('inbox')
+  }
+
+  // Only show nav items whose module is enabled
+  const visibleNavItems = NAV_ITEMS.filter(item => isEnabled(item.section))
 
   return (
     <aside className="w-72 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col h-full">
@@ -127,22 +159,41 @@ export default function Sidebar() {
           </div>
 
           <div className="space-y-0.5 px-2">
-            {NAV_ITEMS.map(item => {
+            {visibleNavItems.map((item, idx) => {
               const isActive = activeSection === item.section
               const Icon = item.icon
 
+              // Insert group label divider
+              const prevItem = idx > 0 ? visibleNavItems[idx - 1] : null
+              const showDivider = item.group && item.group !== prevItem?.group
+
               let badge: number | null = null
-              if (item.section === 'inbox') {
+              if (item.section === 'focus') {
+                badge = focusTaskIds.length || null
+              } else if (item.section === 'inbox') {
                 badge = getUnreadCount(messages, activeProjectId)
               } else if (item.section === 'tasks') {
                 badge = getTaskCount(tasks, activeProjectId)
               } else if (item.section === 'repositories') {
                 badge = getRepoCount(repos, activeProjectId)
+              } else if (item.section === 'notes') {
+                badge = notes.filter(n => n.projectId === activeProjectId).length || null
+              } else if (item.section === 'debt') {
+                badge = techDebt.filter(d => d.projectId === activeProjectId && d.status !== 'resolved').length || null
+              } else if (item.section === 'milestones') {
+                badge = milestones.filter(m => m.projectId === activeProjectId && m.status !== 'completed').length || null
               }
 
               return (
+                <div key={item.section}>
+                  {showDivider && (
+                    <div className="flex items-center gap-2 px-1 pt-3 pb-1">
+                      <div className="flex-1 border-t border-slate-800" />
+                      <span className="text-xs text-slate-600 uppercase tracking-wider font-medium">{item.group}</span>
+                      <div className="flex-1 border-t border-slate-800" />
+                    </div>
+                  )}
                 <button
-                  key={item.section}
                   onClick={() => setActiveSection(item.section)}
                   className={clsx(
                     'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all duration-150 group relative',
@@ -153,14 +204,23 @@ export default function Sidebar() {
                 >
                   {/* Active indicator */}
                   {isActive && (
-                    <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-blue-500 rounded-full" />
+                    <div className={clsx(
+                      'absolute left-0 top-1 bottom-1 w-0.5 rounded-full',
+                      item.section === 'focus' ? 'bg-amber-500' :
+                      item.section === 'debt'  ? 'bg-rose-500'  :
+                      item.section === 'ai'    ? 'bg-violet-500': 'bg-blue-500'
+                    )} />
                   )}
 
                   <Icon
                     size={15}
                     className={clsx(
                       'flex-shrink-0 ml-1',
-                      isActive ? 'text-blue-400' : 'text-slate-500 group-hover:text-slate-300'
+                      isActive
+                        ? item.section === 'focus'  ? 'text-amber-400'  :
+                          item.section === 'debt'   ? 'text-rose-400'   :
+                          item.section === 'ai'     ? 'text-violet-400' : 'text-blue-400'
+                        : 'text-slate-500 group-hover:text-slate-300'
                     )}
                   />
                   <span className="flex-1 text-sm font-medium">{item.label}</span>
@@ -177,6 +237,7 @@ export default function Sidebar() {
                     </span>
                   )}
                 </button>
+                </div>
               )
             })}
           </div>

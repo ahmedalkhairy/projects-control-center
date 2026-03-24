@@ -14,7 +14,9 @@ import {
   Tag,
   Bell,
   X,
+  Target,
 } from 'lucide-react'
+import { HelpButton } from './HelpButton'
 import clsx from 'clsx'
 import { format } from 'date-fns'
 import {
@@ -43,7 +45,7 @@ function fmtInterval(minutes: number): string {
 
 type ViewMode = 'list' | 'kanban'
 type TabFilter = 'all' | TaskStatus
-type TypeFilter = 'all' | 'local' | 'jira'
+type TypeFilter = 'all' | 'local' | 'jira' | 'gitlab'
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'todo', label: 'Todo', color: 'text-slate-400' },
@@ -61,6 +63,9 @@ export default function TasksView() {
     deleteTask,
     moveTaskToProject,
     openTaskModal,
+    focusTaskIds,
+    addToFocus,
+    removeFromFocus,
   } = useStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('list')
@@ -72,11 +77,17 @@ export default function TasksView() {
 
   const projectTasks = tasks[activeProjectId] ?? []
 
-  const filtered = projectTasks.filter(t => {
-    if (tabFilter !== 'all' && t.status !== tabFilter) return false
-    if (typeFilter !== 'all' && t.type !== typeFilter) return false
-    return true
-  })
+  const filtered = projectTasks
+    .filter(t => {
+      if (tabFilter !== 'all' && t.status !== tabFilter) return false
+      if (typeFilter !== 'all' && t.type !== typeFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const aDone = a.status === 'done' ? 1 : 0
+      const bDone = b.status === 'done' ? 1 : 0
+      return aDone - bDone
+    })
 
   const totalActive = projectTasks.filter(t => t.status !== 'done').length
   const doneCount = projectTasks.filter(t => t.status === 'done').length
@@ -122,6 +133,18 @@ export default function TasksView() {
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-slate-100">Tasks</h1>
+          <HelpButton
+            title="Tasks"
+            description="The main task management board for this project. Create, prioritize, and track tasks in list or Kanban grid view."
+            tips={[
+              'Click the status circle to cycle: To Do → In Progress → Done.',
+              '"Done" tasks automatically sink to the bottom of the list.',
+              'Drag tasks in grid view to reorder within their status column.',
+              'Set reminders on tasks to get desktop notifications at the right time.',
+              'Pin important tasks to Focus mode for daily tracking.',
+              'Convert tasks from inbox messages using the → To Task button.',
+            ]}
+          />
           <div className="flex items-center gap-2">
             <span className="text-xs bg-blue-600/20 text-blue-400 border border-blue-600/30 px-2 py-0.5 rounded-full font-medium">
               {totalActive} active
@@ -194,6 +217,9 @@ export default function TasksView() {
           handleQuickCreate={handleQuickCreate}
           quickCreateRef={quickCreateRef}
           projects={projects}
+          focusTaskIds={focusTaskIds}
+          addToFocus={addToFocus}
+          removeFromFocus={removeFromFocus}
           onEdit={openTaskModal}
           onDelete={deleteTask}
           onStatusChange={(id, status) => updateTask(id, { status })}
@@ -241,6 +267,9 @@ interface ListViewProps {
   handleQuickCreate: (e: KeyboardEvent<HTMLInputElement>) => void
   quickCreateRef: React.RefObject<HTMLInputElement>
   projects: import('../types').Project[]
+  focusTaskIds: string[]
+  addToFocus: (id: string) => void
+  removeFromFocus: (id: string) => void
   onEdit: (task: Task) => void
   onDelete: (id: string) => void
   onStatusChange: (id: string, status: TaskStatus) => void
@@ -261,6 +290,9 @@ function ListView({
   handleQuickCreate,
   quickCreateRef,
   projects,
+  focusTaskIds,
+  addToFocus,
+  removeFromFocus,
   onEdit,
   onDelete,
   onStatusChange,
@@ -268,9 +300,10 @@ function ListView({
   onReminderOpen,
 }: ListViewProps) {
   const TYPE_ITEMS: { key: TypeFilter; label: string; activeClass: string }[] = [
-    { key: 'all',   label: 'All',   activeClass: 'bg-slate-800 text-slate-100 border-slate-700' },
-    { key: 'local', label: 'Local', activeClass: 'bg-slate-700/60 text-slate-300 border-slate-600' },
-    { key: 'jira',  label: 'Jira',  activeClass: 'bg-blue-600/20 text-blue-400 border-blue-600/40' },
+    { key: 'all',    label: 'All',    activeClass: 'bg-slate-800 text-slate-100 border-slate-700' },
+    { key: 'local',  label: 'Local',  activeClass: 'bg-slate-700/60 text-slate-300 border-slate-600' },
+    { key: 'jira',   label: 'Jira',   activeClass: 'bg-blue-600/20 text-blue-400 border-blue-600/40' },
+    { key: 'gitlab', label: 'GitLab', activeClass: 'bg-orange-600/20 text-orange-400 border-orange-600/40' },
   ]
 
   return (
@@ -369,11 +402,13 @@ function ListView({
               task={task}
               isLast={idx === filtered.length - 1}
               projects={projects}
+              isFocused={focusTaskIds.includes(task.id)}
               onEdit={() => onEdit(task)}
               onDelete={() => onDelete(task.id)}
               onStatusChange={status => onStatusChange(task.id, status)}
               onMove={targetId => onMove(task.id, targetId)}
               onReminderOpen={() => onReminderOpen(task.id)}
+              onFocusToggle={() => focusTaskIds.includes(task.id) ? removeFromFocus(task.id) : addToFocus(task.id)}
             />
           ))}
         </div>
@@ -388,14 +423,16 @@ interface TaskRowProps {
   task: Task
   isLast: boolean
   projects: import('../types').Project[]
+  isFocused: boolean
   onEdit: () => void
   onDelete: () => void
   onStatusChange: (status: TaskStatus) => void
   onMove: (targetProjectId: string) => void
   onReminderOpen: () => void
+  onFocusToggle: () => void
 }
 
-function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onMove, onReminderOpen }: TaskRowProps) {
+function TaskRow({ task, isLast, projects, isFocused, onEdit, onDelete, onStatusChange, onMove, onReminderOpen, onFocusToggle }: TaskRowProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const isDone = task.status === 'done'
@@ -461,11 +498,11 @@ function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onM
       {/* Type badge */}
       <span className={clsx(
         'text-[10px] font-semibold px-1.5 py-0.5 rounded border flex-shrink-0',
-        task.type === 'jira'
-          ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-          : 'bg-slate-700/60 text-slate-500 border-slate-700'
+        task.type === 'jira'   ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+        task.type === 'gitlab' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+        'bg-slate-700/60 text-slate-500 border-slate-700'
       )}>
-        {task.type === 'jira' ? 'Jira' : 'Local'}
+        {task.type === 'jira' ? 'Jira' : task.type === 'gitlab' ? 'GitLab' : 'Local'}
       </span>
 
       {/* Jira key */}
@@ -478,6 +515,20 @@ function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onM
           title="Open in Jira"
         >
           {task.jiraKey}
+          <ExternalLink size={10} />
+        </a>
+      )}
+
+      {/* GitLab IID */}
+      {task.gitlabIid !== undefined && (
+        <a
+          href={task.gitlabLink ?? '#'}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded hover:bg-orange-500/20 transition-colors flex-shrink-0"
+          title="Open in GitLab"
+        >
+          GL-{task.gitlabIid}
           <ExternalLink size={10} />
         </a>
       )}
@@ -505,6 +556,21 @@ function TaskRow({ task, isLast, projects, onEdit, onDelete, onStatusChange, onM
       <span className={clsx('badge text-xs flex-shrink-0', statusBg(task.status))}>
         {task.status}
       </span>
+
+      {/* Focus toggle */}
+      <button
+        onClick={onFocusToggle}
+        className={clsx(
+          'p-1.5 rounded transition-all flex-shrink-0',
+          isFocused
+            ? 'text-amber-400 opacity-100'
+            : 'text-slate-600 hover:text-amber-400 hover:bg-slate-700 opacity-0 group-hover:opacity-100',
+        )}
+        aria-label={isFocused ? 'Remove from focus' : 'Add to focus'}
+        title={isFocused ? 'Remove from today\'s focus' : 'Add to today\'s focus'}
+      >
+        <Target size={14} />
+      </button>
 
       {/* Reminder bell */}
       <button
@@ -804,6 +870,11 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
         {task.jiraKey && (
           <span className="text-xs text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded bg-blue-500/10">
             {task.jiraKey}
+          </span>
+        )}
+        {task.gitlabIid !== undefined && (
+          <span className="text-xs text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded bg-orange-500/10">
+            GL-{task.gitlabIid}
           </span>
         )}
       </div>

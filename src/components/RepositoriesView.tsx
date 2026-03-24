@@ -28,6 +28,7 @@ import { useStore } from '../store'
 import { timeAgo } from '../utils'
 import type { GitRepo, GitEvent, GitEventStatus, GitProvider } from '../types'
 import AddRepoModal from './AddRepoModal'
+import { HelpButton } from './HelpButton'
 
 // ── Provider logo ─────────────────────────────────────────────────────────────
 
@@ -457,7 +458,20 @@ export default function RepositoriesView() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-slate-100">Repositories</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-slate-100">Repositories</h2>
+            <HelpButton
+              title="Repositories"
+              description="Track GitHub and GitLab repositories for this project. Monitor pipeline status, open PRs, issues, and recent activity all in one place."
+              tips={[
+                'Add a repo by pasting the "owner/repo" path and optionally a PAT token.',
+                '"Sync" refreshes events, pipeline status, and PR counts from the API.',
+                'Pipeline status shows the latest CI/CD result (✅ passing / ❌ failed).',
+                'Failed pipelines and new releases create notifications in your Inbox automatically.',
+                'For self-hosted GitLab, provide the instance URL in the API URL field.',
+              ]}
+            />
+          </div>
           <p className="text-sm text-slate-400 mt-0.5">
             {projectRepos.length === 0
               ? 'No repositories linked'

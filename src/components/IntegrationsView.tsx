@@ -13,10 +13,12 @@ import {
   ChevronDown,
   ChevronUp,
   Inbox,
+  GitBranch,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { timeAgo } from '../utils'
 import type { Integration, IntegrationType } from '../types'
+import { HelpButton } from './HelpButton'
 
 interface IntegrationDef {
   type: IntegrationType
@@ -49,6 +51,19 @@ const INTEGRATION_DEFS: IntegrationDef[] = [
       { key: 'projectKey', label: 'Project Key', placeholder: 'e.g. EC' },
       { key: 'username', label: 'Username / Email', placeholder: 'user@example.com' },
       { key: 'apiToken', label: 'API Token', placeholder: 'Enter Jira API token', type: 'password' },
+    ],
+  },
+  {
+    type: 'gitlab',
+    name: 'GitLab',
+    description: 'Sync GitLab issues as tasks and monitor pipeline status.',
+    icon: GitBranch,
+    iconColor: '#fc6d26',
+    iconBg: 'bg-orange-500/10',
+    configFields: [
+      { key: 'instanceUrl', label: 'Instance URL', placeholder: 'https://gitlab.com' },
+      { key: 'projectPath', label: 'Project Path', placeholder: 'group/project' },
+      { key: 'token', label: 'Personal Access Token', placeholder: 'glpat-xxxxxxxxxxxx', type: 'password' },
     ],
   },
   {
@@ -86,14 +101,33 @@ const INTEGRATION_DEFS: IntegrationDef[] = [
 ]
 
 export default function IntegrationsView() {
-  const { activeProjectId, integrations, updateIntegration, syncJiraIntegration, syncJiraNotifications, testJiraIntegration, syncingIntegrationIds } = useStore()
+  const {
+    activeProjectId, integrations, updateIntegration,
+    syncJiraIntegration, syncJiraNotifications, testJiraIntegration,
+    syncGitLabIntegration, syncGitLabNotifications, testGitLabIntegration,
+    syncingIntegrationIds,
+  } = useStore()
 
   const projectIntegrations = integrations[activeProjectId] ?? []
 
   return (
     <div className="p-6 max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold text-slate-100 mb-1">Integrations</h1>
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-lg font-semibold text-slate-100">Integrations</h1>
+          <HelpButton
+            title="Integrations"
+            description="Connect external services to automatically sync tasks and messages into Control Center. Each project can have its own integration config."
+            tips={[
+              'Jira: syncs assigned issues as Tasks and unread comments as Inbox messages.',
+              'GitLab: syncs assigned issues as Tasks and recent activity as Inbox messages.',
+              '"Test Connection" verifies your credentials before enabling.',
+              '"Sync Now" manually triggers a sync — useful for testing.',
+              'Auto-sync interval is configured globally in Settings → Auto-Sync.',
+              'Credentials are stored locally in your browser — never sent to our servers.',
+            ]}
+          />
+        </div>
         <p className="text-sm text-slate-500">
           Connect external services to automatically populate your inbox.
         </p>
@@ -109,9 +143,21 @@ export default function IntegrationsView() {
               def={def}
               integration={integration}
               onUpdate={(updates) => updateIntegration(integration.id, updates)}
-              onTest={def.type === 'jira' ? (cfg) => testJiraIntegration(integration.id, cfg) : undefined}
-              onSync={def.type === 'jira' ? (cfg) => syncJiraIntegration(integration.id, cfg) : undefined}
-              onSyncNotifications={def.type === 'jira' ? (cfg) => syncJiraNotifications(integration.id, cfg) : undefined}
+              onTest={
+                def.type === 'jira'   ? (cfg) => testJiraIntegration(integration.id, cfg) :
+                def.type === 'gitlab' ? (cfg) => testGitLabIntegration(integration.id, cfg) :
+                undefined
+              }
+              onSync={
+                def.type === 'jira'   ? (cfg) => syncJiraIntegration(integration.id, cfg) :
+                def.type === 'gitlab' ? (cfg) => syncGitLabIntegration(integration.id, cfg) :
+                undefined
+              }
+              onSyncNotifications={
+                def.type === 'jira'   ? (cfg) => syncJiraNotifications(integration.id, cfg) :
+                def.type === 'gitlab' ? (cfg) => syncGitLabNotifications(integration.id, cfg) :
+                undefined
+              }
               isSyncing={syncingIntegrationIds.includes(integration.id)}
             />
           )

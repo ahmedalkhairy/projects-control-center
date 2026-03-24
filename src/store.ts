@@ -10,8 +10,12 @@ import type {
   Integration,
   AppNotification,
   GitRepo,
+  MeetingNote,
+  TechDebtItem,
+  Milestone,
 } from './types'
 import { testJiraConnection, fetchJiraIssuesAsTasks, fetchJiraNotifications } from './services/jira'
+import { testGitLabConnection, fetchGitLabIssuesAsTasks, fetchGitLabNotifications } from './services/gitlab'
 import { syncRepo as syncRepoApi } from './services/git'
 import {
   mockProjects,
@@ -23,6 +27,7 @@ import {
   mockRepos,
 } from './mockData'
 import { generateId, sendDesktopNotification } from './utils'
+import { defaultEnabledModules } from './modules'
 
 // ─── computed helpers ────────────────────────────────────────────────────────
 
@@ -95,6 +100,10 @@ interface AppState {
   syncJiraNotifications: (integrationId: string, config?: Record<string, string>) => Promise<{ ok: boolean; count?: number; error?: string }>
   testJiraIntegration: (integrationId: string, config?: Record<string, string>) => Promise<{ ok: boolean; displayName?: string; error?: string }>
 
+  syncGitLabIntegration: (integrationId: string, config?: Record<string, string>) => Promise<{ ok: boolean; count?: number; error?: string }>
+  syncGitLabNotifications: (integrationId: string, config?: Record<string, string>) => Promise<{ ok: boolean; count?: number; error?: string }>
+  testGitLabIntegration: (integrationId: string, config?: Record<string, string>) => Promise<{ ok: boolean; displayName?: string; error?: string }>
+
   // ids of integrations currently syncing
   syncingIntegrationIds: string[]
 
@@ -122,6 +131,44 @@ interface AppState {
   // global sync settings (persisted)
   jiraSyncInterval: number  // seconds; 0 = disabled
   setJiraSyncInterval: (seconds: number) => void
+
+  // AI / Gemini settings (persisted)
+  geminiApiKey: string
+  setGeminiApiKey: (key: string) => void
+
+  // Module visibility (persisted)
+  enabledModules: Record<string, boolean>
+  setModuleEnabled: (key: string, enabled: boolean) => void
+
+  // focus mode (persisted)
+  focusTaskIds: string[]
+  addToFocus: (taskId: string) => void
+  removeFromFocus: (taskId: string) => void
+  clearFocus: () => void
+
+  // milestones (persisted)
+  milestones: Milestone[]
+  addMilestone: (m: Omit<Milestone, 'id' | 'createdAt' | 'updatedAt'>) => void
+  updateMilestone: (id: string, updates: Partial<Milestone>) => void
+  deleteMilestone: (id: string) => void
+  linkTaskToMilestone: (milestoneId: string, taskId: string) => void
+  unlinkTaskFromMilestone: (milestoneId: string, taskId: string) => void
+
+  // tech debt (persisted)
+  techDebt: TechDebtItem[]
+  addDebtItem: (item: Omit<TechDebtItem, 'id' | 'createdAt' | 'updatedAt'>) => void
+  updateDebtItem: (id: string, updates: Partial<TechDebtItem>) => void
+  deleteDebtItem: (id: string) => void
+  convertDebtToTask: (debtId: string) => void
+
+  // meeting notes (persisted)
+  notes: MeetingNote[]
+  activeNoteId: string | null
+  addNote: (projectId: string) => string
+  updateNote: (id: string, updates: Partial<Pick<MeetingNote, 'title' | 'content' | 'projectId'>>) => void
+  deleteNote: (id: string) => void
+  setActiveNoteId: (id: string | null) => void
+  extractNoteTask: (noteId: string, line: string, projectId: string) => void
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -178,6 +225,13 @@ export const useStore = create<AppState>()(
       syncingIntegrationIds: [],
 
       jiraSyncInterval: 5,
+      geminiApiKey: '',
+      enabledModules: defaultEnabledModules(),
+      focusTaskIds: [],
+      milestones: [],
+      techDebt: [],
+      notes: [],
+      activeNoteId: null,
 
       // ui state
       activeSection: 'inbox',
@@ -213,6 +267,13 @@ export const useStore = create<AppState>()(
             type: 'jira',
             enabled: false,
             config: { serverUrl: '', projectKey: '', apiToken: '', username: '' },
+          },
+          {
+            id: generateId(),
+            projectId: id,
+            type: 'gitlab',
+            enabled: false,
+            config: { instanceUrl: '', projectPath: '', token: '' },
           },
           {
             id: generateId(),
@@ -338,7 +399,16 @@ export const useStore = create<AppState>()(
 
       updateTask: (id, updates) =>
         set(state => ({
-          tasks: updateInRecord(state.tasks, id, t => ({ ...t, ...updates })),
+          tasks: updateInRecord(state.tasks, id, t => ({
+            ...t,
+            ...updates,
+            // Stamp completedAt when task transitions to done
+            completedAt: updates.status === 'done' && t.status !== 'done'
+              ? new Date().toISOString()
+              : updates.status && updates.status !== 'done'
+              ? undefined   // clear if moved out of done
+              : t.completedAt,
+          })),
         })),
 
       deleteTask: (id) =>
@@ -517,6 +587,131 @@ export const useStore = create<AppState>()(
           if (highPriority.length > 0) {
             get().pushNotifications(highPriority.map(n => ({
               id:          `jira-${n.id}`,
+              projectId:   integration.projectId,
+              projectName: project?.name ?? 'Project',
+              title:       n.title,
+              message:     n.body,
+              type:        n.priority === 'critical' ? 'error' : 'warning' as const,
+              timestamp:   new Date().toISOString(),
+              read:        false,
+              url:         n.externalLink,
+            })))
+          }
+
+          return { ok: true, count: notifications.length }
+        } catch (e) {
+          if (isManual) set(state => ({
+            syncingIntegrationIds: state.syncingIntegrationIds.filter(id => id !== integrationId),
+          }))
+          return { ok: false, error: (e as Error).message }
+        }
+      },
+
+      // ── GitLab integration actions ───────────────────────────────────────
+
+      testGitLabIntegration: async (integrationId, overrideConfig) => {
+        const integration = findInRecord(get().integrations, integrationId)
+        if (!integration) return { ok: false, error: 'Integration not found' }
+        const merged = { ...integration.config, ...overrideConfig }
+        return testGitLabConnection({
+          instanceUrl: merged.instanceUrl ?? '',
+          projectPath: merged.projectPath ?? '',
+          token:       merged.token       ?? '',
+        })
+      },
+
+      syncGitLabIntegration: async (integrationId, overrideConfig) => {
+        const { integrations } = get()
+        const integration = findInRecord(integrations, integrationId)
+        if (!integration) return { ok: false, error: 'Integration not found' }
+
+        const isManual = !!overrideConfig
+        if (isManual) set(state => ({ syncingIntegrationIds: [...state.syncingIntegrationIds, integrationId] }))
+
+        try {
+          const merged = { ...integration.config, ...overrideConfig }
+          const cfg = {
+            instanceUrl: merged.instanceUrl ?? '',
+            projectPath: merged.projectPath ?? '',
+            token:       merged.token       ?? '',
+          }
+
+          const fetchedTasks = await fetchGitLabIssuesAsTasks(cfg, integration.projectId)
+
+          set(state => {
+            const existing    = state.tasks[integration.projectId] ?? []
+            const existingById = new Map(existing.map(t => [t.id, t]))
+
+            const upserted: Task[] = fetchedTasks.map(fetched => {
+              const prev = existingById.get(fetched.id)
+              return {
+                ...fetched,
+                status:    prev ? prev.status : fetched.status,
+                createdAt: prev?.createdAt ?? new Date().toISOString(),
+              }
+            })
+
+            const fetchedIds = new Set(fetchedTasks.map(t => t.id))
+            const locals = existing.filter(t => t.type !== 'gitlab' || !fetchedIds.has(t.id))
+
+            return {
+              tasks: { ...state.tasks, [integration.projectId]: [...locals, ...upserted] },
+              integrations: updateInRecord(state.integrations, integrationId, i => ({
+                ...i,
+                lastSync: new Date().toISOString(),
+              })),
+              ...(isManual ? { syncingIntegrationIds: state.syncingIntegrationIds.filter(id => id !== integrationId) } : {}),
+            }
+          })
+
+          return { ok: true, count: fetchedTasks.length }
+        } catch (e) {
+          if (isManual) set(state => ({
+            syncingIntegrationIds: state.syncingIntegrationIds.filter(id => id !== integrationId),
+          }))
+          return { ok: false, error: (e as Error).message }
+        }
+      },
+
+      syncGitLabNotifications: async (integrationId, overrideConfig) => {
+        const { integrations } = get()
+        const integration = findInRecord(integrations, integrationId)
+        if (!integration) return { ok: false, error: 'Integration not found' }
+
+        const isManual = !!overrideConfig
+        if (isManual) set(state => ({ syncingIntegrationIds: [...state.syncingIntegrationIds, integrationId] }))
+
+        try {
+          const merged = { ...integration.config, ...overrideConfig }
+          const cfg = {
+            instanceUrl: merged.instanceUrl ?? '',
+            projectPath: merged.projectPath ?? '',
+            token:       merged.token       ?? '',
+          }
+
+          const notifications = await fetchGitLabNotifications(cfg, integration.projectId)
+
+          set(state => {
+            const existing    = state.messages[integration.projectId] ?? []
+            const existingIds = new Set(existing.map(m => m.id))
+            const brandNew    = notifications.filter(n => !existingIds.has(n.id))
+
+            return {
+              messages: {
+                ...state.messages,
+                [integration.projectId]: [...brandNew, ...existing],
+              },
+              ...(isManual ? { syncingIntegrationIds: state.syncingIntegrationIds.filter(id => id !== integrationId) } : {}),
+            }
+          })
+
+          // Push AppNotifications for high/critical items
+          const { projects } = get()
+          const project = projects.find(p => p.id === integration.projectId)
+          const urgent = notifications.filter(n => n.priority === 'critical' || n.priority === 'high')
+          if (urgent.length > 0) {
+            get().pushNotifications(urgent.map(n => ({
+              id:          `gitlab-notif-${n.id}`,
               projectId:   integration.projectId,
               projectName: project?.name ?? 'Project',
               title:       n.title,
@@ -753,15 +948,200 @@ export const useStore = create<AppState>()(
 
       setJiraSyncInterval: (seconds) => set({ jiraSyncInterval: seconds }),
 
+      setGeminiApiKey: (key) => set({ geminiApiKey: key }),
+
+      setModuleEnabled: (key, enabled) =>
+        set(state => ({
+          enabledModules: { ...state.enabledModules, [key]: enabled },
+        })),
+
+      addToFocus: (taskId) =>
+        set(state => ({
+          focusTaskIds: state.focusTaskIds.includes(taskId)
+            ? state.focusTaskIds
+            : [...state.focusTaskIds, taskId],
+        })),
+
+      removeFromFocus: (taskId) =>
+        set(state => ({ focusTaskIds: state.focusTaskIds.filter(id => id !== taskId) })),
+
+      clearFocus: () => set({ focusTaskIds: [] }),
+
+      // ── milestone actions ─────────────────────────────────────────────────
+
+      addMilestone: (m) => {
+        const now = new Date().toISOString()
+        const milestone: Milestone = { ...m, id: generateId(), createdAt: now, updatedAt: now }
+        set(state => ({ milestones: [milestone, ...state.milestones] }))
+      },
+
+      updateMilestone: (id, updates) =>
+        set(state => ({
+          milestones: state.milestones.map(m =>
+            m.id === id ? { ...m, ...updates, updatedAt: new Date().toISOString() } : m
+          ),
+        })),
+
+      deleteMilestone: (id) =>
+        set(state => ({ milestones: state.milestones.filter(m => m.id !== id) })),
+
+      linkTaskToMilestone: (milestoneId, taskId) =>
+        set(state => ({
+          milestones: state.milestones.map(m =>
+            m.id === milestoneId && !m.linkedTaskIds.includes(taskId)
+              ? { ...m, linkedTaskIds: [...m.linkedTaskIds, taskId], updatedAt: new Date().toISOString() }
+              : m
+          ),
+        })),
+
+      unlinkTaskFromMilestone: (milestoneId, taskId) =>
+        set(state => ({
+          milestones: state.milestones.map(m =>
+            m.id === milestoneId
+              ? { ...m, linkedTaskIds: m.linkedTaskIds.filter(id => id !== taskId), updatedAt: new Date().toISOString() }
+              : m
+          ),
+        })),
+
+      // ── tech debt actions ─────────────────────────────────────────────────
+
+      addDebtItem: (item) => {
+        const now = new Date().toISOString()
+        const debt: TechDebtItem = { ...item, id: generateId(), createdAt: now, updatedAt: now }
+        set(state => ({ techDebt: [debt, ...state.techDebt] }))
+      },
+
+      updateDebtItem: (id, updates) =>
+        set(state => ({
+          techDebt: state.techDebt.map(d =>
+            d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
+          ),
+        })),
+
+      deleteDebtItem: (id) =>
+        set(state => ({ techDebt: state.techDebt.filter(d => d.id !== id) })),
+
+      convertDebtToTask: (debtId) => {
+        const { techDebt, tasks } = get()
+        const debt = techDebt.find(d => d.id === debtId)
+        if (!debt) return
+        const task: Task = {
+          id: generateId(),
+          projectId: debt.projectId,
+          title: `[Tech Debt] ${debt.title}`,
+          description: debt.description,
+          status: 'todo',
+          priority: debt.priority,
+          type: 'local',
+          tags: [debt.category, `effort:${debt.effort}`],
+          createdAt: new Date().toISOString(),
+        }
+        set(state => ({
+          tasks: {
+            ...state.tasks,
+            [debt.projectId]: [...(state.tasks[debt.projectId] ?? []), task],
+          },
+          techDebt: state.techDebt.map(d =>
+            d.id === debtId
+              ? { ...d, taskId: task.id, status: 'in-progress', updatedAt: new Date().toISOString() }
+              : d
+          ),
+        }))
+      },
+
+      // ── meeting notes actions ─────────────────────────────────────────────
+
+      addNote: (projectId) => {
+        const id = generateId()
+        const note: MeetingNote = {
+          id,
+          projectId,
+          title: '',
+          content: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          extractedTaskIds: [],
+        }
+        set(state => ({ notes: [note, ...state.notes], activeNoteId: id }))
+        return id
+      },
+
+      updateNote: (id, updates) =>
+        set(state => ({
+          notes: state.notes.map(n =>
+            n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n
+          ),
+        })),
+
+      deleteNote: (id) =>
+        set(state => ({
+          notes: state.notes.filter(n => n.id !== id),
+          activeNoteId: state.activeNoteId === id
+            ? (state.notes.find(n => n.id !== id)?.id ?? null)
+            : state.activeNoteId,
+        })),
+
+      setActiveNoteId: (id) => set({ activeNoteId: id }),
+
+      extractNoteTask: (noteId, line, projectId) => {
+        const task: Task = {
+          id: generateId(),
+          projectId,
+          title: line.trim(),
+          status: 'todo',
+          priority: 'medium',
+          type: 'local',
+          createdAt: new Date().toISOString(),
+        }
+        set(state => ({
+          tasks: {
+            ...state.tasks,
+            [projectId]: [...(state.tasks[projectId] ?? []), task],
+          },
+          notes: state.notes.map(n =>
+            n.id === noteId
+              ? { ...n, extractedTaskIds: [...n.extractedTaskIds, task.id] }
+              : n
+          ),
+        }))
+      },
+
       // helper to cycle task status
     }),
     {
       name: 'control-center-v1',
-      version: 1,
+      version: 4,
       migrate: (persistedState: any, version: number) => {
         if (version === 0) {
-          // Clear static mock notifications from previous version
           persistedState.notifications = []
+        }
+        if (version < 2) {
+          // Inject GitLab integration for any project that doesn't have one yet
+          const integrations: Record<string, any[]> = persistedState.integrations ?? {}
+          const projects: any[] = persistedState.projects ?? []
+          for (const project of projects) {
+            const list: any[] = integrations[project.id] ?? []
+            if (!list.some((i: any) => i.type === 'gitlab')) {
+              list.push({
+                id:        `gl-${project.id}`,
+                projectId: project.id,
+                type:      'gitlab',
+                enabled:   false,
+                config:    { instanceUrl: '', projectPath: '', token: '' },
+              })
+              integrations[project.id] = list
+            }
+          }
+          persistedState.integrations = integrations
+        }
+        if (version < 3) {
+          // Replace anthropicApiKey with geminiApiKey
+          persistedState.geminiApiKey = ''
+          delete persistedState.anthropicApiKey
+        }
+        if (version < 4) {
+          // Add enabledModules with all modules enabled by default
+          persistedState.enabledModules = defaultEnabledModules()
         }
         return persistedState
       },
@@ -775,6 +1155,12 @@ export const useStore = create<AppState>()(
         notifications: state.notifications,
         repos: state.repos,
         jiraSyncInterval: state.jiraSyncInterval,
+        geminiApiKey: state.geminiApiKey,
+        enabledModules: state.enabledModules,
+        focusTaskIds: state.focusTaskIds,
+        notes: state.notes,
+        techDebt: state.techDebt,
+        milestones: state.milestones,
       }),
     }
   )

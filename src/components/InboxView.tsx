@@ -16,6 +16,7 @@ import {
   CheckCheck,
   SlidersHorizontal,
 } from 'lucide-react'
+import { HelpButton } from './HelpButton'
 import clsx from 'clsx'
 import {
   timeAgo,
@@ -118,6 +119,16 @@ export default function InboxView() {
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-slate-100">Inbox</h1>
+          <HelpButton
+            title="Inbox"
+            description="Centralizes all incoming notifications from your connected integrations — Jira, GitLab, email, WhatsApp, and GitHub. Every new message arrives here first."
+            tips={[
+              'Mark messages as Read / Handled to track what you\'ve processed.',
+              '"→ To Task" converts a message into a task in the current project.',
+              'Filter by source (Jira, GitLab, etc.) or priority using the dropdowns.',
+              'Unread count shows on the sidebar badge so nothing slips through.',
+            ]}
+          />
           {unreadCount > 0 && (
             <span className="bg-blue-600 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
               {unreadCount} unread

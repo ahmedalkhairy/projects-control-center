@@ -30,6 +30,7 @@ import {
 import clsx from 'clsx'
 import { generateId } from '../utils'
 import type { QuickAction } from '../types'
+import { HelpButton } from './HelpButton'
 
 // icon registry
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -156,6 +157,17 @@ export default function QuickActionsView() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-slate-100">Quick Actions</h1>
+          <HelpButton
+            title="Quick Actions"
+            description="A customizable launchpad of external links and shortcuts. Keep your most-used tools — dashboards, monitoring, docs, deploys — one click away."
+            tips={[
+              'Add links to Grafana, Sentry, Confluence, deployment pipelines, etc.',
+              'Organize links into groups (e.g. Monitoring, Docs, DevOps).',
+              'Drag-to-reorder lets you arrange links by priority.',
+              'Each action opens in a new browser tab.',
+              'One link pad per project — customize it per context.',
+            ]}
+          />
           <span className="text-xs text-slate-500">{actions.length} links</span>
         </div>
         <div className="flex items-center gap-2">

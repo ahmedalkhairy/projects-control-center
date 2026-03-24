@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage } from 'electron'
 import path from 'path'
 import { testJiraConnectionNode, fetchJiraIssuesAsTasksNode, fetchJiraNotificationsNode, createJiraIssueNode } from './jira'
+import { testGitLabConnectionNode, fetchGitLabIssuesNode, fetchGitLabNotificationsNode } from './gitlab'
 
 // ─── Dev / prod detection ─────────────────────────────────────────────────────
 
@@ -123,6 +124,20 @@ ipcMain.handle('jira:fetchNotifications', async (_event, cfg) => {
 
 ipcMain.handle('jira:createIssue', async (_event, cfg, summary, description, priority) => {
   return createJiraIssueNode(cfg, summary, description, priority)
+})
+
+// ─── GitLab IPC handlers ───────────────────────────────────────────────────
+
+ipcMain.handle('gitlab:test', async (_event, cfg) => {
+  return testGitLabConnectionNode(cfg)
+})
+
+ipcMain.handle('gitlab:fetchIssues', async (_event, cfg, maxResults) => {
+  return fetchGitLabIssuesNode(cfg, maxResults)
+})
+
+ipcMain.handle('gitlab:fetchNotifications', async (_event, cfg, maxResults) => {
+  return fetchGitLabNotificationsNode(cfg, maxResults)
 })
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────

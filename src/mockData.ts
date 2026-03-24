@@ -521,6 +521,13 @@ export const mockIntegrations: Record<string, Integration[]> = {
       },
       lastSync: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
     },
+    {
+      id: 'int-gl1',
+      projectId: 'p1',
+      type: 'gitlab',
+      enabled: false,
+      config: { instanceUrl: '', projectPath: '', token: '' },
+    },
   ],
   p2: [
     {
@@ -560,6 +567,13 @@ export const mockIntegrations: Record<string, Integration[]> = {
       },
       lastSync: new Date(Date.now() - 1000 * 60 * 1).toISOString(),
     },
+    {
+      id: 'int-gl2',
+      projectId: 'p2',
+      type: 'gitlab',
+      enabled: false,
+      config: { instanceUrl: '', projectPath: '', token: '' },
+    },
   ],
   p3: [
     {
@@ -597,6 +611,13 @@ export const mockIntegrations: Record<string, Integration[]> = {
         groupIds: '',
         webhookUrl: '',
       },
+    },
+    {
+      id: 'int-gl3',
+      projectId: 'p3',
+      type: 'gitlab',
+      enabled: false,
+      config: { instanceUrl: '', projectPath: '', token: '' },
     },
   ],
 }
