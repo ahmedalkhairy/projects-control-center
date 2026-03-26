@@ -3,6 +3,8 @@ name: Build Installer
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch: # allow manual trigger from GitHub UI
 
 jobs:
