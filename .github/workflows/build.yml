@@ -28,8 +28,7 @@ jobs:
           # Disable code signing — no certificate on CI
           CSC_IDENTITY_AUTO_DISCOVERY: false
           WIN_CSC_LINK: ''
-          # Prevent electron-builder from auto-publishing to GitHub Releases
-          ELECTRON_BUILDER_PUBLISH: never
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
