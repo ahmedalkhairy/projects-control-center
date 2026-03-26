@@ -13,9 +13,10 @@ import type {
   MeetingNote,
   TechDebtItem,
   Milestone,
+  WipLimit,
 } from './types'
-import { testJiraConnection, fetchJiraIssuesAsTasks, fetchJiraNotifications } from './services/jira'
-import { testGitLabConnection, fetchGitLabIssuesAsTasks, fetchGitLabNotifications } from './services/gitlab'
+import { testJiraConnection, fetchJiraIssuesAsTasks, fetchJiraNotifications, updateJiraIssueStatus } from './services/jira'
+import { testGitLabConnection, fetchGitLabIssuesAsTasks, fetchGitLabNotifications, updateGitLabIssueStatus } from './services/gitlab'
 import { syncRepo as syncRepoApi } from './services/git'
 import {
   mockProjects,
@@ -140,6 +141,10 @@ interface AppState {
   enabledModules: Record<string, boolean>
   setModuleEnabled: (key: string, enabled: boolean) => void
 
+  // WIP limits (persisted) — projectId → status → { min?, max? }
+  wipLimits: Record<string, Record<string, WipLimit>>
+  setWipLimit: (projectId: string, status: TaskStatus, limit: WipLimit) => void
+
   // focus mode (persisted)
   focusTaskIds: string[]
   addToFocus: (taskId: string) => void
@@ -227,6 +232,7 @@ export const useStore = create<AppState>()(
       jiraSyncInterval: 5,
       geminiApiKey: '',
       enabledModules: defaultEnabledModules(),
+      wipLimits: {},
       focusTaskIds: [],
       milestones: [],
       techDebt: [],
@@ -397,7 +403,8 @@ export const useStore = create<AppState>()(
         }))
       },
 
-      updateTask: (id, updates) =>
+      updateTask: (id, updates) => {
+        // 1. Apply local state update immediately
         set(state => ({
           tasks: updateInRecord(state.tasks, id, t => ({
             ...t,
@@ -409,7 +416,42 @@ export const useStore = create<AppState>()(
               ? undefined   // clear if moved out of done
               : t.completedAt,
           })),
-        })),
+        }))
+
+        // 2. If status changed on a Jira/GitLab task → push to remote (fire & forget)
+        if (updates.status) {
+          const state = get()
+          const task = findInRecord(state.tasks, id)
+          if (!task) return
+
+          const projectIntegrations = state.integrations[task.projectId] ?? []
+
+          if (task.type === 'jira' && task.jiraKey) {
+            const int = projectIntegrations.find(i => i.type === 'jira' && i.enabled)
+            if (int) {
+              const cfg = {
+                serverUrl:  int.config.serverUrl  ?? '',
+                projectKey: int.config.projectKey ?? '',
+                username:   int.config.username   ?? '',
+                apiToken:   int.config.apiToken   ?? '',
+              }
+              updateJiraIssueStatus(cfg, task.jiraKey, updates.status).catch(console.error)
+            }
+          }
+
+          if (task.type === 'gitlab' && task.gitlabIid !== undefined) {
+            const int = projectIntegrations.find(i => i.type === 'gitlab' && i.enabled)
+            if (int) {
+              const cfg = {
+                instanceUrl: int.config.instanceUrl ?? '',
+                projectPath: int.config.projectPath ?? '',
+                token:       int.config.token       ?? '',
+              }
+              updateGitLabIssueStatus(cfg, task.gitlabIid, updates.status).catch(console.error)
+            }
+          }
+        }
+      },
 
       deleteTask: (id) =>
         set(state => ({
@@ -515,8 +557,9 @@ export const useStore = create<AppState>()(
               const prev = existingById.get(fetched.id)
               return {
                 ...fetched,
-                // keep local status if user manually changed it; otherwise use Jira status
-                status:    prev ? prev.status : fetched.status,
+                // Always trust remote status — bidirectional sync: local changes were
+                // already pushed to Jira immediately, so remote is authoritative on pull.
+                status:    fetched.status,
                 createdAt: prev?.createdAt ?? new Date().toISOString(),
               }
             })
@@ -646,7 +689,8 @@ export const useStore = create<AppState>()(
               const prev = existingById.get(fetched.id)
               return {
                 ...fetched,
-                status:    prev ? prev.status : fetched.status,
+                // Always trust remote status — bidirectional sync.
+                status:    fetched.status,
                 createdAt: prev?.createdAt ?? new Date().toISOString(),
               }
             })
@@ -955,6 +999,17 @@ export const useStore = create<AppState>()(
           enabledModules: { ...state.enabledModules, [key]: enabled },
         })),
 
+      setWipLimit: (projectId, status, limit) =>
+        set(state => ({
+          wipLimits: {
+            ...state.wipLimits,
+            [projectId]: {
+              ...(state.wipLimits[projectId] ?? {}),
+              [status]: limit,
+            },
+          },
+        })),
+
       addToFocus: (taskId) =>
         set(state => ({
           focusTaskIds: state.focusTaskIds.includes(taskId)
@@ -1110,7 +1165,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'control-center-v1',
-      version: 4,
+      version: 5,
       migrate: (persistedState: any, version: number) => {
         if (version === 0) {
           persistedState.notifications = []
@@ -1143,6 +1198,9 @@ export const useStore = create<AppState>()(
           // Add enabledModules with all modules enabled by default
           persistedState.enabledModules = defaultEnabledModules()
         }
+        if (version < 5) {
+          persistedState.wipLimits = {}
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -1157,6 +1215,7 @@ export const useStore = create<AppState>()(
         jiraSyncInterval: state.jiraSyncInterval,
         geminiApiKey: state.geminiApiKey,
         enabledModules: state.enabledModules,
+        wipLimits: state.wipLimits,
         focusTaskIds: state.focusTaskIds,
         notes: state.notes,
         techDebt: state.techDebt,

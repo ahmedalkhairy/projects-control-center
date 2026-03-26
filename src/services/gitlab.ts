@@ -102,6 +102,21 @@ async function proxyFetch(cfg: GitLabConfig, path: string): Promise<unknown> {
   return res.json()
 }
 
+/** Browser-dev-mode only: PUT request through the Vite GitLab proxy. */
+async function proxyPut(cfg: GitLabConfig, path: string, body: object): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${PROXY}${path}`, {
+    method:  'PUT',
+    headers: proxyHeaders(cfg),
+    body:    JSON.stringify(body),
+  })
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`
+    try { const data = await res.json(); msg = data.message ?? data.error ?? msg } catch { /* ignore */ }
+    return { ok: false, error: msg }
+  }
+  return { ok: true }
+}
+
 function mapPriority(labels: string[], severity?: string): Priority {
   const allLabels = [...labels, severity ?? ''].map(l => l.toLowerCase())
   for (const l of allLabels) {
@@ -254,4 +269,25 @@ export async function fetchGitLabPipelines(
   if (isElectron()) return []
   const pipelines = await proxyFetch(cfg, `/api/v4/projects/${ep}/pipelines?${params}`) as GLPipeline[]
   return pipelines ?? []
+}
+
+/**
+ * Push a local status change to GitLab by opening or closing the issue.
+ * 'done' → close the issue | 'todo' / 'in-progress' → reopen the issue.
+ */
+export async function updateGitLabIssueStatus(
+  cfg: GitLabConfig,
+  iid: number,
+  appStatus: TaskStatus,
+): Promise<{ ok: boolean; error?: string }> {
+  const stateEvent = appStatus === 'done' ? 'close' : 'reopen'
+
+  // ── Electron: use IPC ──
+  if (isElectron()) {
+    return electronAPI().gitlab.updateStatus(cfg, iid, stateEvent)
+  }
+
+  // ── Browser dev: use Vite proxy ──
+  const ep = encodedPath(cfg)
+  return proxyPut(cfg, `/api/v4/projects/${ep}/issues/${iid}`, { state_event: stateEvent })
 }

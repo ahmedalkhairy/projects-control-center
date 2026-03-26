@@ -3,22 +3,26 @@ import { useStore } from '../store'
 import {
   X, Trash2, Save, Tag, ExternalLink,
   Paperclip, ImagePlus, Loader2, ChevronDown,
+  Edit3, Calendar, GitBranch, Zap, BookOpen,
+  ArrowLeft,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { format } from 'date-fns'
 import type { Task, TaskStatus, Priority, TaskType } from '../types'
 import { createJiraIssue } from '../services/jira'
+import { isOverdue, formatDate } from '../utils'
 
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'todo',        label: 'Todo' },
-  { value: 'in-progress', label: 'In Progress' },
-  { value: 'done',        label: 'Done' },
+const STATUS_OPTIONS: { value: TaskStatus; label: string; bg: string; text: string; border: string }[] = [
+  { value: 'todo',        label: 'Todo',        bg: 'bg-slate-700',     text: 'text-slate-200',  border: 'border-slate-600' },
+  { value: 'in-progress', label: 'In Progress', bg: 'bg-blue-600/20',   text: 'text-blue-400',   border: 'border-blue-600/50' },
+  { value: 'done',        label: 'Done',        bg: 'bg-green-600/20',  text: 'text-green-400',  border: 'border-green-600/50' },
 ]
 
-const PRIORITY_OPTIONS: { value: Priority; label: string; color: string }[] = [
-  { value: 'low',      label: 'Low',      color: 'text-slate-400' },
-  { value: 'medium',   label: 'Medium',   color: 'text-yellow-400' },
-  { value: 'high',     label: 'High',     color: 'text-orange-400' },
-  { value: 'critical', label: 'Critical', color: 'text-red-400' },
+const PRIORITY_OPTIONS: { value: Priority; label: string; color: string; dot: string }[] = [
+  { value: 'low',      label: 'Low',      color: 'text-slate-400',  dot: 'bg-slate-400' },
+  { value: 'medium',   label: 'Medium',   color: 'text-yellow-400', dot: 'bg-yellow-400' },
+  { value: 'high',     label: 'High',     color: 'text-orange-400', dot: 'bg-orange-400' },
+  { value: 'critical', label: 'Critical', color: 'text-red-400',    dot: 'bg-red-500' },
 ]
 
 const TYPE_OPTIONS: { value: TaskType; label: string }[] = [
@@ -42,6 +46,9 @@ export default function TaskModal() {
   const hasJira = activeProjectIntegrations.some(i => i.type === 'jira' && i.enabled)
   const isEdit  = !!(taskModalTask?.id)
 
+  // ── Mode: view (existing task) vs edit form ──────────────────────────────────
+  const [viewMode, setViewMode] = useState(isEdit)
+
   // ── Basic fields ─────────────────────────────────────────────────────────────
   const [title,       setTitle]       = useState(taskModalTask?.title ?? '')
   const [description, setDescription] = useState(taskModalTask?.description ?? '')
@@ -58,14 +65,13 @@ export default function TaskModal() {
   const [attachments, setAttachments] = useState<string[]>(taskModalTask?.attachments ?? [])
 
   // ── UI state ─────────────────────────────────────────────────────────────────
-  const [showAdvanced,  setShowAdvanced]  = useState(isEdit) // expand by default when editing
+  const [showAdvanced,  setShowAdvanced]  = useState(isEdit)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [saving,        setSaving]        = useState(false)
   const [jiraError,     setJiraError]     = useState<string | null>(null)
   const [lightbox,      setLightbox]      = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Count filled advanced fields for badge
   const advancedCount = [
     type !== 'local',
     !!dueDate,
@@ -90,11 +96,13 @@ export default function TaskModal() {
     function handleKey(e: globalThis.KeyboardEvent) {
       if (e.key === 'Escape') {
         if (lightbox) { setLightbox(null); return }
+        if (!viewMode && isEdit) { setViewMode(true); return }
         closeTaskModal()
       }
     }
     function handlePaste(e: ClipboardEvent) {
-      if (!showAdvanced) return // only paste when advanced section is open
+      if (viewMode) return
+      if (!showAdvanced) return
       const items = Array.from(e.clipboardData?.items ?? [])
       const imageItems = items.filter(i => i.type.startsWith('image/'))
       if (imageItems.length === 0) return
@@ -107,7 +115,15 @@ export default function TaskModal() {
       window.removeEventListener('keydown', handleKey)
       window.removeEventListener('paste', handlePaste)
     }
-  }, [closeTaskModal, lightbox, showAdvanced, addImages])
+  }, [closeTaskModal, lightbox, showAdvanced, addImages, viewMode, isEdit])
+
+  // ── Quick status change from view mode ───────────────────────────────────────
+  function handleQuickStatus(newStatus: TaskStatus) {
+    setStatus(newStatus)
+    if (isEdit && taskModalTask?.id) {
+      updateTask(taskModalTask.id, { status: newStatus })
+    }
+  }
 
   // ── Save ─────────────────────────────────────────────────────────────────────
   async function handleSave() {
@@ -172,302 +188,229 @@ export default function TaskModal() {
   }
 
   const parsedTags = tagsInput.split(',').map(t => t.trim()).filter(Boolean)
+  const overdue = taskModalTask?.dueDate && taskModalTask.status !== 'done' && isOverdue(taskModalTask.dueDate)
+  const currentStatus = STATUS_OPTIONS.find(s => s.value === status)
+  const currentPriority = PRIORITY_OPTIONS.find(p => p.value === priority)
 
   return (
     <div
       className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) closeTaskModal() }}
     >
-      <div className="w-full max-w-lg bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden">
+      <div className={clsx(
+        'w-full bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col',
+        viewMode ? 'max-w-2xl' : 'max-w-lg'
+      )}>
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-200">
-            {isEdit ? 'Edit Task' : 'New Task'}
-          </h2>
-          <button
-            onClick={closeTaskModal}
-            className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
-            aria-label="Close modal"
-          >
-            <X size={15} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-
-          {/* ── BASIC ─────────────────────────────────────────────────────── */}
-
-          {/* Title */}
-          <div>
-            <label className="label">Title *</label>
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Task title..."
-              className="input text-sm font-medium"
-              autoFocus
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="label">Description</label>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Add more details..."
-              rows={3}
-              className="input text-sm resize-none"
-            />
-          </div>
-
-          {/* Status + Priority inline */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Status</label>
-              <div className="flex flex-col gap-1.5">
-                {STATUS_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setStatus(opt.value)}
-                    className={clsx(
-                      'py-1.5 px-3 rounded-lg text-xs font-medium transition-all border text-left',
-                      status === opt.value
-                        ? opt.value === 'todo'
-                          ? 'bg-slate-700 border-slate-600 text-slate-200'
-                          : opt.value === 'in-progress'
-                          ? 'bg-blue-600/20 border-blue-600/50 text-blue-400'
-                          : 'bg-green-600/20 border-green-600/50 text-green-400'
-                        : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="label">Priority</label>
-              <div className="flex flex-col gap-1.5">
-                {PRIORITY_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setPriority(opt.value)}
-                    className={clsx(
-                      'py-1.5 px-3 rounded-lg text-xs font-medium transition-all border text-left',
-                      priority === opt.value
-                        ? 'bg-slate-700 border-slate-600'
-                        : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
-                    )}
-                  >
-                    <span className={priority === opt.value ? opt.color : ''}>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* ── ADVANCED TOGGLE ──────────────────────────────────────────── */}
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(v => !v)}
-            className="w-full flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors py-1"
-          >
-            <div className="flex-1 h-px bg-slate-800" />
-            <span className="flex items-center gap-1.5 px-1 shrink-0">
-              {advancedCount > 0 && (
-                <span className="bg-blue-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
-                  {advancedCount}
+        {/* ══════════════════════════════════════════════════════════
+            VIEW MODE
+        ══════════════════════════════════════════════════════════ */}
+        {viewMode ? (
+          <>
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800">
+              {/* Type + key badges */}
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className={clsx(
+                  'text-[10px] font-semibold px-2 py-0.5 rounded border flex-shrink-0',
+                  taskModalTask?.type === 'jira'   ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                  taskModalTask?.type === 'gitlab' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                  'bg-slate-700/60 text-slate-400 border-slate-700'
+                )}>
+                  {taskModalTask?.type === 'jira' ? 'Jira' : taskModalTask?.type === 'gitlab' ? 'GitLab' : 'Local'}
                 </span>
-              )}
-              Advanced
-              <ChevronDown
-                size={13}
-                className={clsx('transition-transform duration-200', showAdvanced && 'rotate-180')}
-              />
-            </span>
-            <div className="flex-1 h-px bg-slate-800" />
-          </button>
 
-          {/* ── ADVANCED FIELDS ──────────────────────────────────────────── */}
-          {showAdvanced && (
-            <div className="space-y-4">
+                {taskModalTask?.jiraKey && (
+                  <a
+                    href={taskModalTask.jiraLink ?? '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-mono flex-shrink-0"
+                  >
+                    {taskModalTask.jiraKey}
+                    <ExternalLink size={10} />
+                  </a>
+                )}
+                {taskModalTask?.gitlabIid !== undefined && (
+                  <a
+                    href={taskModalTask.gitlabLink ?? '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 font-mono flex-shrink-0"
+                  >
+                    GL-{taskModalTask.gitlabIid}
+                    <ExternalLink size={10} />
+                  </a>
+                )}
+                {taskModalTask?.sprint && (
+                  <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded flex-shrink-0">
+                    🏃 {taskModalTask.sprint}
+                  </span>
+                )}
+              </div>
 
-              {/* Type */}
-              <div>
-                <label className="label">Type</label>
-                <div className="flex gap-2">
-                  {TYPE_OPTIONS.map(opt => (
+              {/* Actions */}
+              <button
+                onClick={() => setViewMode(false)}
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors flex-shrink-0"
+              >
+                <Edit3 size={12} />
+                Edit
+              </button>
+              <button
+                onClick={closeTaskModal}
+                className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors flex-shrink-0"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+
+              {/* Title */}
+              <h2 className="text-lg font-semibold text-slate-100 leading-snug">
+                {taskModalTask?.title}
+              </h2>
+
+              {/* Status + Priority row */}
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Status selector — clickable directly */}
+                <div className="flex items-center gap-1.5">
+                  {STATUS_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
-                      onClick={() => setType(opt.value)}
+                      onClick={() => handleQuickStatus(opt.value)}
                       className={clsx(
-                        'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all border',
-                        type === opt.value
-                          ? 'bg-blue-600/20 border-blue-600/50 text-blue-400'
-                          : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                        'px-3 py-1 rounded-lg text-xs font-medium border transition-all',
+                        status === opt.value
+                          ? `${opt.bg} ${opt.text} ${opt.border}`
+                          : 'bg-slate-800 text-slate-600 border-slate-700 hover:text-slate-300 hover:bg-slate-700/60'
                       )}
                     >
                       {opt.label}
                     </button>
                   ))}
                 </div>
+
+                {/* Priority badge */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700">
+                  <div className={clsx('w-2 h-2 rounded-full flex-shrink-0', currentPriority?.dot)} />
+                  <span className={clsx('text-xs font-medium', currentPriority?.color)}>
+                    {currentPriority?.label}
+                  </span>
+                </div>
+
+                {/* Due date */}
+                {taskModalTask?.dueDate && (
+                  <div className={clsx(
+                    'flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs',
+                    overdue
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : 'bg-slate-800 border-slate-700 text-slate-400'
+                  )}>
+                    <Calendar size={12} />
+                    {overdue ? 'Overdue · ' : ''}{formatDate(taskModalTask.dueDate)}
+                  </div>
+                )}
               </div>
 
-              {/* Jira fields */}
-              {type === 'jira' && (
-                <div className="space-y-3 bg-blue-500/5 border border-blue-500/10 rounded-xl p-3">
-                  <div>
-                    <label className="label">Jira Key</label>
-                    <input
-                      value={jiraKey}
-                      onChange={e => setJiraKey(e.target.value)}
-                      placeholder="e.g. EC-1042  (leave empty to auto-create)"
-                      className="input text-sm font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Jira Link</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        value={jiraLink}
-                        onChange={e => setJiraLink(e.target.value)}
-                        placeholder="https://jira.example.com/browse/EC-1042"
-                        className="input text-sm flex-1"
-                        type="url"
-                      />
-                      {jiraLink && (
-                        <a
-                          href={jiraLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-2 text-blue-400 hover:text-blue-300 transition-colors"
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                      )}
-                    </div>
-                  </div>
+              {/* Description */}
+              {taskModalTask?.description && (
+                <div className="bg-slate-800/50 border border-slate-800 rounded-xl px-4 py-3">
+                  <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                    {taskModalTask.description}
+                  </p>
                 </div>
               )}
 
-              {/* Due Date */}
-              <div>
-                <label className="label">Due Date</label>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={e => setDueDate(e.target.value)}
-                  className="input text-sm"
-                  style={{ colorScheme: 'dark' }}
-                />
-              </div>
+              {/* Jira / Sprint / Epic / Parent metadata */}
+              {(taskModalTask?.sprint || taskModalTask?.storyPoints !== undefined || taskModalTask?.epicName || taskModalTask?.parentKey) && (
+                <div className="grid grid-cols-2 gap-3">
+                  {taskModalTask?.sprint && (
+                    <div className="bg-slate-800/40 border border-slate-800 rounded-xl px-4 py-3">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                        <GitBranch size={10} /> Sprint
+                      </div>
+                      <div className="text-sm text-violet-400 font-medium">{taskModalTask.sprint}</div>
+                    </div>
+                  )}
+                  {taskModalTask?.storyPoints !== undefined && (
+                    <div className="bg-slate-800/40 border border-slate-800 rounded-xl px-4 py-3">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Story Points</div>
+                      <div className="text-sm text-slate-200 font-semibold font-mono">{taskModalTask.storyPoints} <span className="text-slate-500 font-normal text-xs">pts</span></div>
+                    </div>
+                  )}
+                  {taskModalTask?.parentKey && (
+                    <div className="bg-slate-800/40 border border-slate-800 rounded-xl px-4 py-3">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                        <BookOpen size={10} /> Parent Story
+                      </div>
+                      <div className="text-sm text-amber-400 font-mono">{taskModalTask.parentKey}</div>
+                      {taskModalTask.parentSummary && (
+                        <div className="text-xs text-slate-500 mt-0.5 truncate">{taskModalTask.parentSummary}</div>
+                      )}
+                    </div>
+                  )}
+                  {taskModalTask?.epicName && (
+                    <div className="bg-slate-800/40 border border-slate-800 rounded-xl px-4 py-3">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                        <Zap size={10} /> Epic
+                      </div>
+                      <div className="text-sm text-pink-400 truncate">{taskModalTask.epicName}</div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Tags */}
-              <div>
-                <label className="label">Tags (comma-separated)</label>
-                <input
-                  value={tagsInput}
-                  onChange={e => setTagsInput(e.target.value)}
-                  onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') e.preventDefault() }}
-                  placeholder="bug, frontend, urgent..."
-                  className="input text-sm"
-                />
-                {parsedTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {parsedTags.map(tag => (
-                      <span key={tag} className="flex items-center gap-1 text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
-                        <Tag size={10} />
+              {taskModalTask?.tags && taskModalTask.tags.length > 0 && (
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                    <Tag size={10} /> Tags
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {taskModalTask.tags.map(tag => (
+                      <span key={tag} className="text-xs bg-slate-800 text-slate-400 border border-slate-700 px-2.5 py-0.5 rounded-full">
                         {tag}
                       </span>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Project */}
-              <div>
-                <label className="label">Project</label>
-                <select
-                  value={projectId}
-                  onChange={e => setProjectId(e.target.value)}
-                  className="input text-sm"
-                >
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
+                </div>
+              )}
 
               {/* Attachments */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="label mb-0 flex items-center gap-1.5">
-                    <Paperclip size={12} />
-                    Attachments
-                    {attachments.length > 0 && (
-                      <span className="text-xs text-slate-500">({attachments.length})</span>
-                    )}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700"
-                  >
-                    <ImagePlus size={12} />
-                    Add images
-                  </button>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={e => { addImages(Array.from(e.target.files ?? [])); e.target.value = '' }}
-                />
-
-                {attachments.length === 0 ? (
-                  <div className="flex items-center justify-center border-2 border-dashed border-slate-700 rounded-xl py-5 text-xs text-slate-600">
-                    Paste (Ctrl+V) or click "Add images"
+              {taskModalTask?.attachments && taskModalTask.attachments.length > 0 && (
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                    <Paperclip size={10} /> Attachments ({taskModalTask.attachments.length})
                   </div>
-                ) : (
                   <div className="grid grid-cols-4 gap-2">
-                    {attachments.map((src, i) => (
-                      <div key={i} className="relative group aspect-square">
-                        <img
-                          src={src}
-                          alt={`Attachment ${i + 1}`}
-                          className="w-full h-full object-cover rounded-lg border border-slate-700 cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => setLightbox(src)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
-                          className="absolute top-1 right-1 p-0.5 bg-slate-900/80 rounded-full text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                          aria-label="Remove image"
-                        >
-                          <X size={11} />
-                        </button>
-                      </div>
+                    {taskModalTask.attachments.map((src, i) => (
+                      <img
+                        key={i}
+                        src={src}
+                        alt={`Attachment ${i + 1}`}
+                        className="w-full aspect-square object-cover rounded-lg border border-slate-700 cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => setLightbox(src)}
+                      />
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
+              {/* Created / Updated */}
+              {taskModalTask?.createdAt && (
+                <div className="text-xs text-slate-600 pt-1 border-t border-slate-800">
+                  Created {format(new Date(taskModalTask.createdAt), 'MMM d, yyyy')}
+                  {taskModalTask.completedAt && ` · Completed ${format(new Date(taskModalTask.completedAt), 'MMM d, yyyy')}`}
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-800 bg-slate-950/30">
-          <div>
-            {isEdit && (
-              !deleteConfirm ? (
+            {/* Footer */}
+            <div className="flex items-center justify-between px-5 py-4 border-t border-slate-800 bg-slate-950/30">
+              {!deleteConfirm ? (
                 <button
                   onClick={() => setDeleteConfirm(true)}
                   className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
@@ -478,43 +421,334 @@ export default function TaskModal() {
               ) : (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-red-400">Confirm?</span>
-                  <button
-                    onClick={handleDelete}
-                    className="text-xs bg-red-600 hover:bg-red-500 text-white px-2.5 py-1 rounded-lg transition-colors"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setDeleteConfirm(false)}
-                    className="text-xs text-slate-500 hover:text-slate-300 px-2.5 py-1 rounded-lg hover:bg-slate-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={handleDelete} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2.5 py-1 rounded-lg">Yes</button>
+                  <button onClick={() => setDeleteConfirm(false)} className="text-xs text-slate-500 hover:text-slate-300 px-2.5 py-1 rounded-lg hover:bg-slate-800">Cancel</button>
                 </div>
-              )
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {jiraError && (
-              <p className="text-xs text-red-400 max-w-[160px] text-right">{jiraError}</p>
-            )}
-            <button onClick={closeTaskModal} className="btn-secondary text-sm py-2">
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={!title.trim() || saving}
-              className={clsx(
-                'btn-primary flex items-center gap-1.5 text-sm py-2',
-                (!title.trim() || saving) && 'opacity-50 cursor-not-allowed'
               )}
-            >
-              {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              {saving ? 'Creating in Jira...' : isEdit ? 'Save Changes' : 'Create Task'}
-            </button>
-          </div>
-        </div>
+              <button onClick={closeTaskModal} className="btn-secondary text-sm py-2">Close</button>
+            </div>
+          </>
+        ) : (
+        /* ══════════════════════════════════════════════════════════
+            EDIT / CREATE MODE
+        ══════════════════════════════════════════════════════════ */
+          <>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                {isEdit && (
+                  <button
+                    onClick={() => setViewMode(true)}
+                    className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
+                    title="Back to view"
+                  >
+                    <ArrowLeft size={15} />
+                  </button>
+                )}
+                <h2 className="text-sm font-semibold text-slate-200">
+                  {isEdit ? 'Edit Task' : 'New Task'}
+                </h2>
+              </div>
+              <button
+                onClick={closeTaskModal}
+                className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+
+              {/* Title */}
+              <div>
+                <label className="label">Title *</label>
+                <input
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  placeholder="Task title..."
+                  className="input text-sm font-medium"
+                  autoFocus
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="label">Description</label>
+                <textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  placeholder="Add more details..."
+                  rows={3}
+                  className="input text-sm resize-none"
+                />
+              </div>
+
+              {/* Status + Priority */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Status</label>
+                  <div className="flex flex-col gap-1.5">
+                    {STATUS_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setStatus(opt.value)}
+                        className={clsx(
+                          'py-1.5 px-3 rounded-lg text-xs font-medium transition-all border text-left',
+                          status === opt.value
+                            ? `${opt.bg} ${opt.border} ${opt.text}`
+                            : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Priority</label>
+                  <div className="flex flex-col gap-1.5">
+                    {PRIORITY_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setPriority(opt.value)}
+                        className={clsx(
+                          'py-1.5 px-3 rounded-lg text-xs font-medium transition-all border text-left flex items-center gap-2',
+                          priority === opt.value
+                            ? 'bg-slate-700 border-slate-600'
+                            : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                        )}
+                      >
+                        <div className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', opt.dot)} />
+                        <span className={priority === opt.value ? opt.color : ''}>{opt.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced toggle */}
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(v => !v)}
+                className="w-full flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors py-1"
+              >
+                <div className="flex-1 h-px bg-slate-800" />
+                <span className="flex items-center gap-1.5 px-1 shrink-0">
+                  {advancedCount > 0 && (
+                    <span className="bg-blue-600 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                      {advancedCount}
+                    </span>
+                  )}
+                  Advanced
+                  <ChevronDown size={13} className={clsx('transition-transform duration-200', showAdvanced && 'rotate-180')} />
+                </span>
+                <div className="flex-1 h-px bg-slate-800" />
+              </button>
+
+              {showAdvanced && (
+                <div className="space-y-4">
+                  {/* Type */}
+                  <div>
+                    <label className="label">Type</label>
+                    <div className="flex gap-2">
+                      {TYPE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setType(opt.value)}
+                          className={clsx(
+                            'flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all border',
+                            type === opt.value
+                              ? 'bg-blue-600/20 border-blue-600/50 text-blue-400'
+                              : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50'
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Jira fields */}
+                  {type === 'jira' && (
+                    <div className="space-y-3 bg-blue-500/5 border border-blue-500/10 rounded-xl p-3">
+                      <div>
+                        <label className="label">Jira Key</label>
+                        <input
+                          value={jiraKey}
+                          onChange={e => setJiraKey(e.target.value)}
+                          placeholder="e.g. EC-1042  (leave empty to auto-create)"
+                          className="input text-sm font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="label">Jira Link</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={jiraLink}
+                            onChange={e => setJiraLink(e.target.value)}
+                            placeholder="https://jira.example.com/browse/EC-1042"
+                            className="input text-sm flex-1"
+                            type="url"
+                          />
+                          {jiraLink && (
+                            <a href={jiraLink} target="_blank" rel="noopener noreferrer" className="p-2 text-blue-400 hover:text-blue-300">
+                              <ExternalLink size={14} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Due Date */}
+                  <div>
+                    <label className="label">Due Date</label>
+                    <input
+                      type="date"
+                      value={dueDate}
+                      onChange={e => setDueDate(e.target.value)}
+                      className="input text-sm"
+                      style={{ colorScheme: 'dark' }}
+                    />
+                  </div>
+
+                  {/* Tags */}
+                  <div>
+                    <label className="label">Tags (comma-separated)</label>
+                    <input
+                      value={tagsInput}
+                      onChange={e => setTagsInput(e.target.value)}
+                      onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') e.preventDefault() }}
+                      placeholder="bug, frontend, urgent..."
+                      className="input text-sm"
+                    />
+                    {parsedTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {parsedTags.map(tag => (
+                          <span key={tag} className="flex items-center gap-1 text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
+                            <Tag size={10} />
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Project */}
+                  <div>
+                    <label className="label">Project</label>
+                    <select
+                      value={projectId}
+                      onChange={e => setProjectId(e.target.value)}
+                      className="input text-sm"
+                    >
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Attachments */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="label mb-0 flex items-center gap-1.5">
+                        <Paperclip size={12} />
+                        Attachments
+                        {attachments.length > 0 && <span className="text-xs text-slate-500">({attachments.length})</span>}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700"
+                      >
+                        <ImagePlus size={12} />
+                        Add images
+                      </button>
+                    </div>
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={e => { addImages(Array.from(e.target.files ?? [])); e.target.value = '' }}
+                    />
+
+                    {attachments.length === 0 ? (
+                      <div className="flex items-center justify-center border-2 border-dashed border-slate-700 rounded-xl py-5 text-xs text-slate-600">
+                        Paste (Ctrl+V) or click "Add images"
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-2">
+                        {attachments.map((src, i) => (
+                          <div key={i} className="relative group aspect-square">
+                            <img
+                              src={src}
+                              alt={`Attachment ${i + 1}`}
+                              className="w-full h-full object-cover rounded-lg border border-slate-700 cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => setLightbox(src)}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                              className="absolute top-1 right-1 p-0.5 bg-slate-900/80 rounded-full text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-5 py-4 border-t border-slate-800 bg-slate-950/30">
+              <div>
+                {isEdit && (
+                  !deleteConfirm ? (
+                    <button
+                      onClick={() => setDeleteConfirm(true)}
+                      className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 size={13} />
+                      Delete
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-red-400">Confirm?</span>
+                      <button onClick={handleDelete} className="text-xs bg-red-600 hover:bg-red-500 text-white px-2.5 py-1 rounded-lg">Yes</button>
+                      <button onClick={() => setDeleteConfirm(false)} className="text-xs text-slate-500 hover:text-slate-300 px-2.5 py-1 rounded-lg hover:bg-slate-800">Cancel</button>
+                    </div>
+                  )
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {jiraError && <p className="text-xs text-red-400 max-w-[160px] text-right">{jiraError}</p>}
+                <button onClick={() => isEdit ? setViewMode(true) : closeTaskModal()} className="btn-secondary text-sm py-2">
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={!title.trim() || saving}
+                  className={clsx(
+                    'btn-primary flex items-center gap-1.5 text-sm py-2',
+                    (!title.trim() || saving) && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  {saving ? 'Creating in Jira...' : isEdit ? 'Save Changes' : 'Create Task'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Lightbox */}
@@ -523,17 +757,12 @@ export default function TaskModal() {
           className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
         >
-          <img
-            src={lightbox}
-            alt="Full size"
-            className="max-w-full max-h-full rounded-xl object-contain"
-            onClick={e => e.stopPropagation()}
-          />
+          <img src={lightbox} alt="Attachment preview" className="max-w-full max-h-full rounded-xl object-contain" />
           <button
             onClick={() => setLightbox(null)}
-            className="absolute top-4 right-4 p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full transition-colors"
+            className="absolute top-4 right-4 p-2 bg-slate-800 rounded-full text-slate-300 hover:text-white"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
       )}

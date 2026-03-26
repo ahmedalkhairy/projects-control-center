@@ -44,6 +44,12 @@ interface JiraIssueType {
   name: string
 }
 
+interface JiraSprint {
+  id:    number
+  name:  string
+  state: 'active' | 'closed' | 'future'
+}
+
 interface JiraIssueFields {
   summary:     string
   description: string | null | { content?: Array<{ content?: Array<{ text?: string }> }> }
@@ -55,6 +61,23 @@ interface JiraIssueFields {
   created:     string
   updated:     string
   labels?:     string[]
+  // Sprint (customfield_10020 on most Jira instances)
+  customfield_10020?: JiraSprint[] | JiraSprint | null
+  // Story points (varies by instance)
+  customfield_10016?: number | null
+  customfield_10028?: number | null
+  story_points?:      number | null
+  // Epic link / Epic name (classic Jira)
+  customfield_10014?: string | null   // epic link key
+  customfield_10008?: string | null   // epic name
+  // Parent issue (next-gen / subtasks)
+  parent?: {
+    key: string
+    fields: {
+      summary:   string
+      issuetype: { name: string }
+    }
+  } | null
 }
 
 interface JiraIssue {
@@ -125,21 +148,64 @@ function mapStatus(jiraStatus: JiraStatus): TaskStatus {
   return 'todo'
 }
 
+/** Extract the active (or most recent) sprint name from Jira fields. */
+function extractSprint(fields: JiraIssueFields): string | undefined {
+  const raw = fields.customfield_10020
+  if (!raw) return undefined
+  if (Array.isArray(raw) && raw.length > 0) {
+    const active = raw.find(s => s.state === 'active') ?? raw[raw.length - 1]
+    return active?.name
+  }
+  if (typeof raw === 'object' && 'name' in raw) return (raw as JiraSprint).name
+  return undefined
+}
+
+/** Extract story points — tries multiple custom fields used by different Jira versions. */
+function extractStoryPoints(fields: JiraIssueFields): number | undefined {
+  const val = fields.customfield_10016 ?? fields.customfield_10028 ?? fields.story_points
+  return (val !== null && val !== undefined) ? val : undefined
+}
+
+/** Extract epic name from the issue fields. */
+function extractEpicName(fields: JiraIssueFields): string | undefined {
+  if (fields.customfield_10008) return fields.customfield_10008  // classic epic name field
+  if (fields.parent?.fields?.issuetype?.name?.toLowerCase().includes('epic')) {
+    return fields.parent.fields.summary
+  }
+  return undefined
+}
+
+/** Extract parent issue key + summary (for sub-tasks and stories under epics in next-gen projects). */
+function extractParent(fields: JiraIssueFields): { key?: string; summary?: string } {
+  if (!fields.parent) return {}
+  const isEpic = fields.parent.fields?.issuetype?.name?.toLowerCase().includes('epic')
+  // If parent is epic — captured in epicName, don't duplicate
+  if (isEpic) return {}
+  return { key: fields.parent.key, summary: fields.parent.fields?.summary }
+}
+
 function issueToTask(issue: JiraIssue, projectId: string, serverUrl: string): Omit<Task, 'createdAt'> {
   const fields   = issue.fields
   const browseUrl = `${serverUrl.replace(/\/$/, '')}/browse/${issue.key}`
 
+  const parent = extractParent(fields)
+
   return {
-    id:          `jira-${issue.id}`,
+    id:            `jira-${issue.id}`,
     projectId,
-    title:       `[${issue.key}] ${fields.summary}`,
-    description: extractDescription(fields.description) || undefined,
-    status:      mapStatus(fields.status),
-    priority:    mapPriority(fields.priority),
-    type:        'jira',
-    jiraKey:     issue.key,
-    jiraLink:    browseUrl,
-    tags:        [fields.issuetype.name, ...(fields.labels ?? [])],
+    title:         `[${issue.key}] ${fields.summary}`,
+    description:   extractDescription(fields.description) || undefined,
+    status:        mapStatus(fields.status),
+    priority:      mapPriority(fields.priority),
+    type:          'jira',
+    jiraKey:       issue.key,
+    jiraLink:      browseUrl,
+    tags:          [fields.issuetype.name, ...(fields.labels ?? [])],
+    sprint:        extractSprint(fields),
+    storyPoints:   extractStoryPoints(fields),
+    epicName:      extractEpicName(fields),
+    parentKey:     parent.key,
+    parentSummary: parent.summary,
   }
 }
 
@@ -185,6 +251,20 @@ function issueToNotification(issue: JiraIssue, projectId: string, serverUrl: str
     labels:       [fields.issuetype.name, fields.status.name],
     externalLink: browseUrl,
   }
+}
+
+/** Map our app status → the best matching Jira transition name keyword. */
+function findTransition(
+  transitions: Array<{ id: string; name: string }>,
+  appStatus: TaskStatus,
+): { id: string; name: string } | undefined {
+  const keywords: Record<TaskStatus, string[]> = {
+    'todo':        ['to do', 'todo', 'open', 'backlog', 'reopen', 'new', 'not started'],
+    'in-progress': ['in progress', 'in_progress', 'progress', 'start', 'doing', 'active', 'working'],
+    'done':        ['done', 'close', 'closed', 'resolve', 'resolved', 'complete', 'completed', 'finish'],
+  }
+  const kws = keywords[appStatus] ?? []
+  return transitions.find(t => kws.some(kw => t.name.toLowerCase().includes(kw)))
 }
 
 function mapPriorityToJira(priority: string): string {
@@ -378,7 +458,15 @@ export async function fetchJiraIssuesAsTasks(
 
   // ── Browser dev: use Vite proxy ──
   const jql    = `project = "${cfg.projectKey}" AND assignee = currentUser() ORDER BY updated DESC`
-  const fields = ['summary', 'description', 'status', 'priority', 'issuetype', 'labels', 'created', 'updated']
+  const fields = [
+    'summary', 'description', 'status', 'priority', 'issuetype', 'labels', 'created', 'updated',
+    'customfield_10020',  // sprint
+    'customfield_10016',  // story points (classic)
+    'customfield_10028',  // story points (next-gen)
+    'customfield_10014',  // epic link
+    'customfield_10008',  // epic name
+    'parent',             // parent issue (next-gen / subtasks)
+  ]
   const base   = apiBase(cfg)
 
   let res: Response
@@ -454,4 +542,54 @@ export async function fetchJiraNotifications(
 
   const data: JiraSearchResult = await res.json()
   return (data.issues ?? []).map(issue => issueToNotification(issue, projectId, cfg.serverUrl))
+}
+
+/**
+ * Push a local status change back to Jira by applying the matching transition.
+ * Maps: 'todo' → "To Do" | 'in-progress' → "In Progress" | 'done' → "Done"
+ */
+export async function updateJiraIssueStatus(
+  cfg: JiraConfig,
+  jiraKey: string,
+  appStatus: TaskStatus,
+): Promise<{ ok: boolean; error?: string }> {
+  // ── Electron: use IPC ──
+  const api = electronAPI()
+  if (api) return api.jira.updateStatus(cfg, jiraKey, appStatus)
+
+  // ── Browser dev: use Vite proxy ──
+  const base = apiBase(cfg)
+
+  try {
+    // Step 1: fetch available transitions
+    const tRes = await fetch(`${PROXY}${base}/issue/${jiraKey}/transitions`, {
+      headers: proxyHeaders(cfg),
+    })
+    if (!tRes.ok) return { ok: false, error: `Transitions HTTP ${tRes.status}` }
+    const tData = await tRes.json()
+    const transitions: Array<{ id: string; name: string }> = tData.transitions ?? []
+
+    // Step 2: find the right one
+    const transition = findTransition(transitions, appStatus)
+    if (!transition) {
+      return { ok: false, error: `No Jira transition found for status '${appStatus}'. Available: ${transitions.map(t => t.name).join(', ')}` }
+    }
+
+    // Step 3: apply
+    const aRes = await fetch(`${PROXY}${base}/issue/${jiraKey}/transitions`, {
+      method:  'POST',
+      headers: proxyHeaders(cfg),
+      body:    JSON.stringify({ transition: { id: transition.id } }),
+    })
+    // Jira returns 204 No Content on success
+    if (!aRes.ok && aRes.status !== 204) {
+      let msg = `HTTP ${aRes.status}`
+      try { const body = await aRes.json(); msg = body.errorMessages?.[0] ?? body.message ?? msg } catch { /* ignore */ }
+      return { ok: false, error: msg }
+    }
+
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
 }

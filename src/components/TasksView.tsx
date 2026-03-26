@@ -15,6 +15,7 @@ import {
   Bell,
   X,
   Target,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { HelpButton } from './HelpButton'
 import clsx from 'clsx'
@@ -27,7 +28,7 @@ import {
   formatDate,
   generateId,
 } from '../utils'
-import type { Task, TaskStatus, Priority, TaskReminder } from '../types'
+import type { Task, TaskStatus, Priority, TaskReminder, WipLimit } from '../types'
 
 // ─── Reminder helpers ─────────────────────────────────────────────────────────
 
@@ -66,6 +67,8 @@ export default function TasksView() {
     focusTaskIds,
     addToFocus,
     removeFromFocus,
+    wipLimits,
+    setWipLimit,
   } = useStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('list')
@@ -74,6 +77,9 @@ export default function TasksView() {
   const [quickCreate, setQuickCreate] = useState('')
   const quickCreateRef = useRef<HTMLInputElement>(null)
   const [reminderTaskId, setReminderTaskId] = useState<string | null>(null)
+  const [wipConfigOpen, setWipConfigOpen] = useState(false)
+
+  const projectWipLimits = wipLimits[activeProjectId] ?? {}
 
   const projectTasks = tasks[activeProjectId] ?? []
 
@@ -184,6 +190,15 @@ export default function TasksView() {
           </div>
 
           <button
+            onClick={() => setWipConfigOpen(true)}
+            title="Configure WIP Limits"
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-slate-700"
+          >
+            <SlidersHorizontal size={14} />
+            WIP Limits
+          </button>
+
+          <button
             onClick={() =>
               openTaskModal({
                 id: '',
@@ -202,6 +217,15 @@ export default function TasksView() {
           </button>
         </div>
       </div>
+
+      {/* WIP Limits Config Modal */}
+      {wipConfigOpen && (
+        <WipConfigModal
+          wipLimits={projectWipLimits}
+          onSave={(status, limit) => setWipLimit(activeProjectId, status, limit)}
+          onClose={() => setWipConfigOpen(false)}
+        />
+      )}
 
       {viewMode === 'list' ? (
         <ListView
@@ -225,6 +249,7 @@ export default function TasksView() {
           onStatusChange={(id, status) => updateTask(id, { status })}
           onMove={moveTaskToProject}
           onReminderOpen={setReminderTaskId}
+          wipLimits={projectWipLimits}
         />
       ) : (
         <KanbanView
@@ -235,6 +260,7 @@ export default function TasksView() {
           onDelete={deleteTask}
           onStatusChange={(id, status) => updateTask(id, { status })}
           onReminderOpen={setReminderTaskId}
+          wipLimits={projectWipLimits}
           onAdd={() =>
             openTaskModal({
               id: '',
@@ -275,6 +301,7 @@ interface ListViewProps {
   onStatusChange: (id: string, status: TaskStatus) => void
   onMove: (taskId: string, targetProjectId: string) => void
   onReminderOpen: (taskId: string) => void
+  wipLimits: Record<string, WipLimit>
 }
 
 function ListView({
@@ -298,6 +325,7 @@ function ListView({
   onStatusChange,
   onMove,
   onReminderOpen,
+  wipLimits,
 }: ListViewProps) {
   const TYPE_ITEMS: { key: TypeFilter; label: string; activeClass: string }[] = [
     { key: 'all',    label: 'All',    activeClass: 'bg-slate-800 text-slate-100 border-slate-700' },
@@ -316,6 +344,10 @@ function ListView({
               tab.key === 'all'
                 ? tasks.filter(t => typeFilter === 'all' || t.type === typeFilter).length
                 : tasks.filter(t => t.status === tab.key && (typeFilter === 'all' || t.type === typeFilter)).length
+            const limit = tab.key !== 'all' ? wipLimits[tab.key] : undefined
+            const isOver  = limit?.max !== undefined && count > limit.max
+            const isUnder = limit?.min !== undefined && count < limit.min
+            const hasLimits = !!limit?.max || !!limit?.min
             return (
               <button
                 key={tab.key}
@@ -328,8 +360,16 @@ function ListView({
                 )}
               >
                 {tab.label}
-                <span className="text-xs bg-slate-700/80 text-slate-400 px-1.5 py-0.5 rounded">
+                <span className={clsx(
+                  'text-xs px-1.5 py-0.5 rounded font-mono',
+                  isOver  ? 'bg-red-600/20 text-red-400 border border-red-600/30' :
+                  isUnder ? 'bg-yellow-600/20 text-yellow-500 border border-yellow-600/30' :
+                  hasLimits ? 'bg-green-600/20 text-green-400 border border-green-600/30' :
+                  'bg-slate-700/80 text-slate-400'
+                )}>
                   {count}
+                  {isOver  && ' ▲'}
+                  {isUnder && ' ▼'}
                 </span>
               </button>
             )
@@ -533,6 +573,35 @@ function TaskRow({ task, isLast, projects, isFocused, onEdit, onDelete, onStatus
         </a>
       )}
 
+      {/* Sprint */}
+      {task.sprint && (
+        <span className="flex items-center gap-1 text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded flex-shrink-0" title="Sprint">
+          🏃 {task.sprint}
+        </span>
+      )}
+
+      {/* Parent story */}
+      {task.parentKey && (
+        <span className="flex items-center gap-1 text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded flex-shrink-0 max-w-[160px] truncate" title={task.parentSummary ?? task.parentKey}>
+          📖 {task.parentKey}
+          {task.parentSummary && <span className="truncate text-amber-500/70"> · {task.parentSummary}</span>}
+        </span>
+      )}
+
+      {/* Epic */}
+      {task.epicName && !task.parentKey && (
+        <span className="flex items-center gap-1 text-xs bg-pink-500/10 text-pink-400 border border-pink-500/20 px-2 py-0.5 rounded flex-shrink-0 max-w-[140px] truncate" title={task.epicName}>
+          ⚡ {task.epicName}
+        </span>
+      )}
+
+      {/* Story points */}
+      {task.storyPoints !== undefined && (
+        <span className="text-xs bg-slate-700/60 text-slate-300 border border-slate-600/50 px-1.5 py-0.5 rounded font-mono flex-shrink-0" title="Story points">
+          {task.storyPoints} SP
+        </span>
+      )}
+
       {/* Due date */}
       {task.dueDate && (
         <span
@@ -665,9 +734,10 @@ interface KanbanViewProps {
   onStatusChange: (id: string, status: TaskStatus) => void
   onReminderOpen: (taskId: string) => void
   onAdd: () => void
+  wipLimits: Record<string, WipLimit>
 }
 
-function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStatusChange, onReminderOpen, onAdd }: KanbanViewProps) {
+function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStatusChange, onReminderOpen, onAdd, wipLimits }: KanbanViewProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
 
@@ -701,6 +771,10 @@ function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStat
       {COLUMNS.map(col => {
         const colTasks = tasks.filter(t => t.status === col.status)
         const isDragOver = dragOverStatus === col.status
+        const limit = wipLimits[col.status]
+        const isOver  = limit?.max !== undefined && colTasks.length > limit.max
+        const isUnder = limit?.min !== undefined && colTasks.length < limit.min
+        const hasLimits = !!limit?.max || !!limit?.min
 
         return (
           <div
@@ -709,8 +783,11 @@ function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStat
             onDrop={e => handleDrop(e, col.status)}
             onDragLeave={() => setDragOverStatus(null)}
             className={clsx(
-              'bg-slate-900 rounded-xl border transition-all duration-150 flex flex-col',
-              isDragOver ? 'border-blue-500/50 bg-blue-500/5' : 'border-slate-800'
+              'rounded-xl border transition-all duration-150 flex flex-col',
+              isDragOver ? 'border-blue-500/50 bg-blue-500/5' :
+              isOver     ? 'border-red-600/40 bg-red-600/5' :
+              isUnder    ? 'border-yellow-600/40 bg-yellow-600/5' :
+              'border-slate-800 bg-slate-900'
             )}
           >
             {/* Column header */}
@@ -725,10 +802,27 @@ function KanbanView({ tasks, projects, activeProjectId, onEdit, onDelete, onStat
                   )}
                 />
                 <span className={clsx('text-sm font-medium', col.color)}>{col.label}</span>
+                {limit && (
+                  <span className="text-[10px] text-slate-600 font-mono">
+                    {limit.min !== undefined && `min ${limit.min}`}
+                    {limit.min !== undefined && limit.max !== undefined && ' · '}
+                    {limit.max !== undefined && `max ${limit.max}`}
+                  </span>
+                )}
               </div>
-              <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">
-                {colTasks.length}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className={clsx(
+                  'text-xs px-2 py-0.5 rounded-full font-mono',
+                  isOver  ? 'bg-red-600/20 text-red-400' :
+                  isUnder ? 'bg-yellow-600/20 text-yellow-500' :
+                  hasLimits ? 'bg-green-600/20 text-green-400' :
+                  'bg-slate-800 text-slate-400'
+                )}>
+                  {colTasks.length}
+                  {isOver  && ' ▲'}
+                  {isUnder && ' ▼'}
+                </span>
+              </div>
             </div>
 
             {/* Cards */}
@@ -877,6 +971,21 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
             GL-{task.gitlabIid}
           </span>
         )}
+        {task.sprint && (
+          <span className="text-xs text-violet-400 border border-violet-500/20 px-1.5 py-0.5 rounded bg-violet-500/10" title="Sprint">
+            🏃 {task.sprint}
+          </span>
+        )}
+        {task.parentKey && (
+          <span className="text-xs text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded bg-amber-500/10 max-w-[100px] truncate" title={task.parentSummary ?? task.parentKey}>
+            📖 {task.parentKey}
+          </span>
+        )}
+        {task.storyPoints !== undefined && (
+          <span className="text-xs text-slate-300 border border-slate-600/50 px-1.5 py-0.5 rounded bg-slate-700/60 font-mono" title="Story points">
+            {task.storyPoints} SP
+          </span>
+        )}
       </div>
 
       {task.tags && task.tags.length > 0 && (
@@ -889,6 +998,118 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
         </div>
       )}
     </div>
+  )
+}
+
+// ─── WIP Config Modal ─────────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<string, string> = {
+  'todo': 'To Do',
+  'in-progress': 'In Progress',
+  'done': 'Done',
+}
+
+interface WipConfigModalProps {
+  wipLimits: Record<string, WipLimit>
+  onSave: (status: TaskStatus, limit: WipLimit) => void
+  onClose: () => void
+}
+
+function WipConfigModal({ wipLimits, onSave, onClose }: WipConfigModalProps) {
+  const [draft, setDraft] = useState<Record<string, { min: string; max: string }>>(() => {
+    const init: Record<string, { min: string; max: string }> = {}
+    for (const s of ['todo', 'in-progress', 'done'] as TaskStatus[]) {
+      init[s] = {
+        min: wipLimits[s]?.min?.toString() ?? '',
+        max: wipLimits[s]?.max?.toString() ?? '',
+      }
+    }
+    return init
+  })
+
+  function handleSave() {
+    for (const s of ['todo', 'in-progress', 'done'] as TaskStatus[]) {
+      const min = draft[s].min ? parseInt(draft[s].min) : undefined
+      const max = draft[s].max ? parseInt(draft[s].max) : undefined
+      onSave(s, { min, max })
+    }
+    onClose()
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+            <div>
+              <h2 className="text-slate-100 font-semibold text-base">WIP Limits</h2>
+              <p className="text-slate-500 text-xs mt-0.5">Set min/max tasks per column. Leave blank to disable.</p>
+            </div>
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="px-6 py-5 space-y-4">
+            {/* legend */}
+            <div className="flex items-center gap-4 text-xs text-slate-500 pb-1">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500/60 inline-block" /> Below min → yellow warning</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500/60 inline-block" /> Above max → red alert</span>
+            </div>
+
+            {(['todo', 'in-progress', 'done'] as TaskStatus[]).map(s => (
+              <div key={s} className="bg-slate-800/50 border border-slate-800 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className={clsx('w-2 h-2 rounded-full',
+                    s === 'todo' && 'bg-slate-500',
+                    s === 'in-progress' && 'bg-blue-500',
+                    s === 'done' && 'bg-green-500'
+                  )} />
+                  <span className="text-sm font-medium text-slate-200">{STATUS_LABELS[s]}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Min tasks</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={draft[s].min}
+                      onChange={e => setDraft(d => ({ ...d, [s]: { ...d[s], min: e.target.value } }))}
+                      placeholder="No minimum"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 mb-1 block">Max tasks</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={draft[s].max}
+                      onChange={e => setDraft(d => ({ ...d, [s]: { ...d[s], max: e.target.value } }))}
+                      placeholder="No maximum"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-800">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Save Limits
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 

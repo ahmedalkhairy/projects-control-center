@@ -11,6 +11,7 @@ import {
   Mail,
   MessageCircle,
   Clock,
+  ExternalLink,
 } from 'lucide-react'
 import clsx from 'clsx'
 import type { Task, Message, QuickAction, Project } from '../types'
@@ -91,7 +92,7 @@ export default function GlobalSearch() {
         }
       }
 
-      // Quick actions
+      // Quick actions — launch URL directly
       const projectActions = quickActions[project.id] ?? []
       for (const action of projectActions) {
         if (!q || action.label.toLowerCase().includes(q) || action.url.toLowerCase().includes(q) || action.group.toLowerCase().includes(q)) {
@@ -102,8 +103,7 @@ export default function GlobalSearch() {
             subtitle: `${action.group} · ${action.url}`,
             project,
             action: () => {
-              setActiveProject(project.id)
-              setActiveSection('quick-actions')
+              window.open(action.url, '_blank', 'noopener,noreferrer')
               setSearchOpen(false)
             },
           })
@@ -210,9 +210,21 @@ export default function GlobalSearch() {
                   <>
                     <Clock size={28} className="text-slate-700 mb-3" />
                     <p className="text-sm text-slate-500">Start typing to search...</p>
-                    <p className="text-xs text-slate-600 mt-1">
-                      Tasks, messages, and quick actions across all projects
-                    </p>
+                    <div className="mt-3 text-left space-y-1.5 bg-slate-800/50 rounded-lg px-4 py-3 mx-4">
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">What you can do</p>
+                      <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <CheckSquare size={11} className="text-blue-400 flex-shrink-0" />
+                        Search tasks across all projects
+                      </p>
+                      <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <Inbox size={11} className="text-green-400 flex-shrink-0" />
+                        Find messages in your inbox
+                      </p>
+                      <p className="text-xs text-slate-400 flex items-center gap-2 font-medium">
+                        <Zap size={11} className="text-amber-400 flex-shrink-0" />
+                        Type a quick action name → press <kbd className="bg-slate-700 px-1 py-0.5 rounded text-slate-300 font-mono text-[10px]">↵</kbd> to launch it instantly
+                      </p>
+                    </div>
                   </>
                 )}
               </div>
@@ -262,15 +274,22 @@ export default function GlobalSearch() {
                               <div className="text-xs text-slate-500 truncate mt-0.5">{result.subtitle}</div>
                             </div>
 
-                            <div
-                              className="flex-shrink-0 text-xs px-2 py-0.5 rounded font-medium"
-                              style={{
-                                backgroundColor: `${result.project.color}15`,
-                                color: result.project.color,
-                              }}
-                            >
-                              {result.project.name}
-                            </div>
+                            {result.type === 'action' ? (
+                              <div className="flex items-center gap-1 flex-shrink-0 text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-medium">
+                                <ExternalLink size={10} />
+                                Launch
+                              </div>
+                            ) : (
+                              <div
+                                className="flex-shrink-0 text-xs px-2 py-0.5 rounded font-medium"
+                                style={{
+                                  backgroundColor: `${result.project.color}15`,
+                                  color: result.project.color,
+                                }}
+                              >
+                                {result.project.name}
+                              </div>
+                            )}
                           </button>
                         )
                       })}
@@ -290,7 +309,9 @@ export default function GlobalSearch() {
                 </span>
                 <span className="flex items-center gap-1">
                   <kbd className="bg-slate-800 px-1 py-0.5 rounded font-mono text-slate-500">↵</kbd>
-                  select
+                  {results[selected]?.type === 'action' ? (
+                    <span className="text-amber-500">launch ↗</span>
+                  ) : 'open'}
                 </span>
                 <span className="flex items-center gap-1">
                   <kbd className="bg-slate-800 px-1 py-0.5 rounded font-mono text-slate-500">Esc</kbd>

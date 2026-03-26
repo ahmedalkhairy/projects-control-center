@@ -49,6 +49,12 @@ export interface Task {
   jiraLink?: string
   gitlabIid?: number
   gitlabLink?: string
+  // Jira sprint & story metadata
+  sprint?: string          // active sprint name, e.g. "Sprint 12"
+  storyPoints?: number     // story points estimate
+  epicName?: string        // parent epic name
+  parentKey?: string       // parent issue key (story/epic this task belongs to)
+  parentSummary?: string   // parent issue summary
   createdAt: string
   tags?: string[]
   fromMessageId?: string
@@ -190,6 +196,13 @@ export interface TechDebtItem {
   taskId?: string        // if converted to a task
   createdAt: string
   updatedAt: string
+}
+
+// ─── WIP Limits ───────────────────────────────────────────────────────────────
+
+export interface WipLimit {
+  min?: number   // warn yellow if count falls below this
+  max?: number   // warn red if count exceeds this
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────

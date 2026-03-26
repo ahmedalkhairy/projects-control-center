@@ -218,7 +218,15 @@ export async function fetchJiraIssuesAsTasksNode(
   try {
     const base   = normalizeUrl(cfg.serverUrl)
     const jql    = `project = "${cfg.projectKey}" AND assignee = currentUser() ORDER BY updated DESC`
-    const fields = ['summary', 'description', 'status', 'priority', 'issuetype', 'labels', 'created', 'updated']
+    const fields = [
+      'summary', 'description', 'status', 'priority', 'issuetype', 'labels', 'created', 'updated',
+      'customfield_10020',  // sprint
+      'customfield_10016',  // story points (classic)
+      'customfield_10028',  // story points (next-gen)
+      'customfield_10014',  // epic link
+      'customfield_10008',  // epic name
+      'parent',             // parent issue
+    ]
 
     let result: RequestResult
 
@@ -253,6 +261,56 @@ export async function fetchJiraIssuesAsTasksNode(
 
     // Map Jira issues → Task-shaped objects (mapping done in renderer store)
     return { ok: true, tasks: data?.issues ?? [] }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/**
+ * Push a status change to Jira by applying the matching workflow transition.
+ * Automatically finds the right transition by name (todo / in-progress / done).
+ */
+export async function updateJiraIssueStatusNode(
+  cfg:       JiraConfig,
+  jiraKey:   string,
+  appStatus: string,   // 'todo' | 'in-progress' | 'done'
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const base = normalizeUrl(cfg.serverUrl)
+    const api  = apiBase(cfg)
+    const hdrs = {
+      'Authorization': authHeader(cfg),
+      'Accept':        'application/json',
+      'Content-Type':  'application/json',
+    }
+
+    // Step 1: Get available transitions
+    const { status: ts, data: td } = await makeRequest(
+      `${base}${api}/issue/${jiraKey}/transitions`,
+      { headers: hdrs },
+    )
+    if (ts < 200 || ts >= 300) return { ok: false, error: `Transitions HTTP ${ts}` }
+
+    const transitions: Array<{ id: string; name: string }> = td?.transitions ?? []
+    const keywords: Record<string, string[]> = {
+      'todo':        ['to do', 'todo', 'open', 'backlog', 'reopen', 'new', 'not started'],
+      'in-progress': ['in progress', 'in_progress', 'progress', 'start', 'doing', 'active', 'working'],
+      'done':        ['done', 'close', 'closed', 'resolve', 'resolved', 'complete', 'completed', 'finish'],
+    }
+    const kws = keywords[appStatus] ?? []
+    const transition = transitions.find(t => kws.some(kw => t.name.toLowerCase().includes(kw)))
+    if (!transition) {
+      return { ok: false, error: `No Jira transition for '${appStatus}'. Available: ${transitions.map(t => t.name).join(', ')}` }
+    }
+
+    // Step 2: Apply transition
+    const { status: as } = await makeRequest(
+      `${base}${api}/issue/${jiraKey}/transitions`,
+      { method: 'POST', headers: hdrs, body: JSON.stringify({ transition: { id: transition.id } }) },
+    )
+    if (as >= 300 && as !== 204) return { ok: false, error: `Transition HTTP ${as}` }
+
+    return { ok: true }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }

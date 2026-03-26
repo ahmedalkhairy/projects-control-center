@@ -163,7 +163,11 @@ export function sendDesktopNotification(
 ): void {
   if (!('Notification' in window) || Notification.permission !== 'granted') return
   const icon = TYPE_ICON[type] ?? 'ℹ️'
-  const n = new Notification(`${icon} ${title}`, { body, silent: false })
+  const n = new Notification(`${icon} ${title}`, {
+    body,
+    silent: false,
+    requireInteraction: true,   // stays until user dismisses — OS controls timeout otherwise
+  })
   if (url) n.onclick = () => { window.open(url, '_blank', 'noopener,noreferrer'); n.close() }
 }
 

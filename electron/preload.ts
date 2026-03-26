@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     createIssue: (cfg: unknown, summary: string, description: string, priority: string) =>
       ipcRenderer.invoke('jira:createIssue', cfg, summary, description, priority),
+
+    updateStatus: (cfg: unknown, jiraKey: string, appStatus: string) =>
+      ipcRenderer.invoke('jira:updateStatus', cfg, jiraKey, appStatus),
   },
 
   // GitLab API calls (run in main process — no CORS)
@@ -29,6 +32,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     fetchNotifications: (cfg: unknown, maxResults?: number) =>
       ipcRenderer.invoke('gitlab:fetchNotifications', cfg, maxResults),
+
+    updateStatus: (cfg: unknown, iid: number, stateEvent: string) =>
+      ipcRenderer.invoke('gitlab:updateStatus', cfg, iid, stateEvent),
   },
 
   // Open URLs in the system default browser
