@@ -219,7 +219,7 @@ export async function fetchJiraIssuesAsTasksNode(
     const base   = normalizeUrl(cfg.serverUrl)
     const jql    = `project = "${cfg.projectKey}" AND assignee = currentUser() ORDER BY updated DESC`
     const fields = [
-      'summary', 'description', 'status', 'priority', 'issuetype', 'labels', 'created', 'updated',
+      'summary', 'description', 'status', 'priority', 'issuetype', 'assignee', 'labels', 'created', 'updated',
       'customfield_10020',  // sprint
       'customfield_10016',  // story points (classic)
       'customfield_10028',  // story points (next-gen)

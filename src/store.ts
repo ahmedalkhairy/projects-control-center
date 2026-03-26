@@ -14,6 +14,8 @@ import type {
   TechDebtItem,
   Milestone,
   WipLimit,
+  AIChatSession,
+  AIChatMessage,
 } from './types'
 import { testJiraConnection, fetchJiraIssuesAsTasks, fetchJiraNotifications, updateJiraIssueStatus } from './services/jira'
 import { testGitLabConnection, fetchGitLabIssuesAsTasks, fetchGitLabNotifications, updateGitLabIssueStatus } from './services/gitlab'
@@ -137,6 +139,12 @@ interface AppState {
   geminiApiKey: string
   setGeminiApiKey: (key: string) => void
 
+  // User profile (persisted)
+  userName: string
+  userEmail: string
+  setUserName: (name: string) => void
+  setUserEmail: (email: string) => void
+
   // Module visibility (persisted)
   enabledModules: Record<string, boolean>
   setModuleEnabled: (key: string, enabled: boolean) => void
@@ -174,6 +182,12 @@ interface AppState {
   deleteNote: (id: string) => void
   setActiveNoteId: (id: string | null) => void
   extractNoteTask: (noteId: string, line: string, projectId: string) => void
+
+  // AI chat sessions (persisted)
+  aiSessions: AIChatSession[]
+  saveAiSession: (projectId: string, messages: AIChatMessage[], existingId?: string) => string
+  deleteAiSession: (id: string) => void
+  updateAiSessionTitle: (id: string, title: string) => void
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -231,6 +245,8 @@ export const useStore = create<AppState>()(
 
       jiraSyncInterval: 5,
       geminiApiKey: '',
+      userName: 'Me',
+      userEmail: '',
       enabledModules: defaultEnabledModules(),
       wipLimits: {},
       focusTaskIds: [],
@@ -238,6 +254,7 @@ export const useStore = create<AppState>()(
       techDebt: [],
       notes: [],
       activeNoteId: null,
+      aiSessions: [],
 
       // ui state
       activeSection: 'inbox',
@@ -391,6 +408,8 @@ export const useStore = create<AppState>()(
           ...taskData,
           id: generateId(),
           createdAt: new Date().toISOString(),
+          // Auto-assign local tasks to the current user
+          assignee: taskData.assignee ?? (taskData.type === 'local' ? get().userName || 'Me' : undefined),
         }
         set(state => ({
           tasks: {
@@ -994,6 +1013,9 @@ export const useStore = create<AppState>()(
 
       setGeminiApiKey: (key) => set({ geminiApiKey: key }),
 
+      setUserName:  (name)  => set({ userName: name }),
+      setUserEmail: (email) => set({ userEmail: email }),
+
       setModuleEnabled: (key, enabled) =>
         set(state => ({
           enabledModules: { ...state.enabledModules, [key]: enabled },
@@ -1161,11 +1183,52 @@ export const useStore = create<AppState>()(
         }))
       },
 
+      // ── AI chat session actions ──────────────────────────────────────────
+
+      saveAiSession: (projectId, messages, existingId) => {
+        const now = new Date().toISOString()
+        const firstUser = messages.find(m => m.role === 'user')
+        const title = firstUser
+          ? firstUser.content.slice(0, 60) + (firstUser.content.length > 60 ? '…' : '')
+          : 'Untitled session'
+
+        if (existingId) {
+          set(state => ({
+            aiSessions: state.aiSessions.map(s =>
+              s.id === existingId ? { ...s, messages, updatedAt: now } : s
+            ),
+          }))
+          return existingId
+        }
+
+        const id = generateId()
+        const session: AIChatSession = {
+          id,
+          projectId,
+          title,
+          messages,
+          createdAt: now,
+          updatedAt: now,
+        }
+        set(state => ({ aiSessions: [session, ...state.aiSessions] }))
+        return id
+      },
+
+      deleteAiSession: (id) =>
+        set(state => ({ aiSessions: state.aiSessions.filter(s => s.id !== id) })),
+
+      updateAiSessionTitle: (id, title) =>
+        set(state => ({
+          aiSessions: state.aiSessions.map(s =>
+            s.id === id ? { ...s, title } : s
+          ),
+        })),
+
       // helper to cycle task status
     }),
     {
       name: 'control-center-v1',
-      version: 5,
+      version: 6,
       migrate: (persistedState: any, version: number) => {
         if (version === 0) {
           persistedState.notifications = []
@@ -1201,6 +1264,9 @@ export const useStore = create<AppState>()(
         if (version < 5) {
           persistedState.wipLimits = {}
         }
+        if (version < 6) {
+          persistedState.aiSessions = []
+        }
         return persistedState
       },
       partialize: (state) => ({
@@ -1214,12 +1280,15 @@ export const useStore = create<AppState>()(
         repos: state.repos,
         jiraSyncInterval: state.jiraSyncInterval,
         geminiApiKey: state.geminiApiKey,
+        userName: state.userName,
+        userEmail: state.userEmail,
         enabledModules: state.enabledModules,
         wipLimits: state.wipLimits,
         focusTaskIds: state.focusTaskIds,
         notes: state.notes,
         techDebt: state.techDebt,
         milestones: state.milestones,
+        aiSessions: state.aiSessions,
       }),
     }
   )

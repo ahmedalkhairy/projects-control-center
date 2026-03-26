@@ -55,6 +55,7 @@ export interface Task {
   epicName?: string        // parent epic name
   parentKey?: string       // parent issue key (story/epic this task belongs to)
   parentSummary?: string   // parent issue summary
+  assignee?: string           // display name of the person assigned
   createdAt: string
   tags?: string[]
   fromMessageId?: string
@@ -203,6 +204,22 @@ export interface TechDebtItem {
 export interface WipLimit {
   min?: number   // warn yellow if count falls below this
   max?: number   // warn red if count exceeds this
+}
+
+// ─── AI Chat Sessions ─────────────────────────────────────────────────────────
+
+export interface AIChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AIChatSession {
+  id: string
+  projectId: string
+  title: string        // auto from first user message
+  messages: AIChatMessage[]
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Notifications ────────────────────────────────────────────────────────────

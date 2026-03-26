@@ -54,6 +54,8 @@ export default function Sidebar() {
     techDebt,
     milestones,
     enabledModules,
+    userName,
+    userEmail,
     setActiveProject,
     setActiveSection,
     setCreateProjectOpen,
@@ -251,8 +253,8 @@ export default function Sidebar() {
             <User size={14} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-slate-200 truncate">Admin User</div>
-            <div className="text-xs text-slate-500 truncate">admin@ops.dev</div>
+            <div className="text-xs font-semibold text-slate-200 truncate">{userName || 'Me'}</div>
+            <div className="text-xs text-slate-500 truncate">{userEmail || ''}</div>
           </div>
           <div className="flex items-center gap-1">
             <button

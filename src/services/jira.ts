@@ -201,6 +201,7 @@ function issueToTask(issue: JiraIssue, projectId: string, serverUrl: string): Om
     jiraKey:       issue.key,
     jiraLink:      browseUrl,
     tags:          [fields.issuetype.name, ...(fields.labels ?? [])],
+    assignee:      fields.assignee?.displayName ?? fields.assignee?.emailAddress ?? undefined,
     sprint:        extractSprint(fields),
     storyPoints:   extractStoryPoints(fields),
     epicName:      extractEpicName(fields),
@@ -459,7 +460,7 @@ export async function fetchJiraIssuesAsTasks(
   // ── Browser dev: use Vite proxy ──
   const jql    = `project = "${cfg.projectKey}" AND assignee = currentUser() ORDER BY updated DESC`
   const fields = [
-    'summary', 'description', 'status', 'priority', 'issuetype', 'labels', 'created', 'updated',
+    'summary', 'description', 'status', 'priority', 'issuetype', 'assignee', 'labels', 'created', 'updated',
     'customfield_10020',  // sprint
     'customfield_10016',  // story points (classic)
     'customfield_10028',  // story points (next-gen)

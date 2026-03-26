@@ -48,6 +48,46 @@ type ViewMode = 'list' | 'kanban'
 type TabFilter = 'all' | TaskStatus
 type TypeFilter = 'all' | 'local' | 'jira' | 'gitlab'
 
+// ─── Assignee avatar helpers ───────────────────────────────────────────────────
+
+const ASSIGNEE_COLORS = [
+  'bg-blue-600 text-white',
+  'bg-violet-600 text-white',
+  'bg-emerald-600 text-white',
+  'bg-orange-600 text-white',
+  'bg-pink-600 text-white',
+  'bg-cyan-600 text-white',
+  'bg-amber-600 text-white',
+  'bg-rose-600 text-white',
+]
+
+function assigneeColor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
+  return ASSIGNEE_COLORS[Math.abs(hash) % ASSIGNEE_COLORS.length]
+}
+
+function assigneeInitials(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
+
+function AssigneeBadge({ name, small }: { name: string; small?: boolean }) {
+  return (
+    <span
+      title={name}
+      className={clsx(
+        'flex-shrink-0 rounded-full font-semibold flex items-center justify-center',
+        assigneeColor(name),
+        small ? 'w-5 h-5 text-[9px]' : 'w-6 h-6 text-[10px]'
+      )}
+    >
+      {assigneeInitials(name)}
+    </span>
+  )
+}
+
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'todo', label: 'Todo', color: 'text-slate-400' },
   { status: 'in-progress', label: 'In Progress', color: 'text-blue-400' },
@@ -74,6 +114,7 @@ export default function TasksView() {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [tabFilter, setTabFilter] = useState<TabFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
   const [quickCreate, setQuickCreate] = useState('')
   const quickCreateRef = useRef<HTMLInputElement>(null)
   const [reminderTaskId, setReminderTaskId] = useState<string | null>(null)
@@ -83,10 +124,16 @@ export default function TasksView() {
 
   const projectTasks = tasks[activeProjectId] ?? []
 
+  // Unique assignees for filter dropdown
+  const allAssignees = Array.from(
+    new Set(projectTasks.map(t => t.assignee).filter(Boolean) as string[])
+  ).sort()
+
   const filtered = projectTasks
     .filter(t => {
       if (tabFilter !== 'all' && t.status !== tabFilter) return false
       if (typeFilter !== 'all' && t.type !== typeFilter) return false
+      if (assigneeFilter !== 'all' && t.assignee !== assigneeFilter) return false
       return true
     })
     .sort((a, b) => {
@@ -235,6 +282,9 @@ export default function TasksView() {
           setTabFilter={setTabFilter}
           typeFilter={typeFilter}
           setTypeFilter={setTypeFilter}
+          assigneeFilter={assigneeFilter}
+          setAssigneeFilter={setAssigneeFilter}
+          allAssignees={allAssignees}
           TAB_ITEMS={TAB_ITEMS}
           quickCreate={quickCreate}
           setQuickCreate={setQuickCreate}
@@ -287,6 +337,9 @@ interface ListViewProps {
   setTabFilter: (f: TabFilter) => void
   typeFilter: TypeFilter
   setTypeFilter: (f: TypeFilter) => void
+  assigneeFilter: string
+  setAssigneeFilter: (f: string) => void
+  allAssignees: string[]
   TAB_ITEMS: { key: TabFilter; label: string }[]
   quickCreate: string
   setQuickCreate: (v: string) => void
@@ -311,6 +364,9 @@ function ListView({
   setTabFilter,
   typeFilter,
   setTypeFilter,
+  assigneeFilter,
+  setAssigneeFilter,
+  allAssignees,
   TAB_ITEMS,
   quickCreate,
   setQuickCreate,
@@ -406,6 +462,39 @@ function ListView({
           })}
         </div>
       </div>
+
+      {/* Assignee filter */}
+      {allAssignees.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-xs text-slate-600 flex-shrink-0">Assignee:</span>
+          <button
+            onClick={() => setAssigneeFilter('all')}
+            className={clsx(
+              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+              assigneeFilter === 'all'
+                ? 'bg-slate-700 text-slate-100 border-slate-600'
+                : 'text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-600'
+            )}
+          >
+            Everyone
+          </button>
+          {allAssignees.map(name => (
+            <button
+              key={name}
+              onClick={() => setAssigneeFilter(assigneeFilter === name ? 'all' : name)}
+              className={clsx(
+                'flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                assigneeFilter === name
+                  ? 'bg-slate-700 text-slate-100 border-slate-600'
+                  : 'text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
+              )}
+            >
+              <AssigneeBadge name={name} small />
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Quick create */}
       <div className="flex items-center gap-3 mb-4 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5">
@@ -625,6 +714,9 @@ function TaskRow({ task, isLast, projects, isFocused, onEdit, onDelete, onStatus
       <span className={clsx('badge text-xs flex-shrink-0', statusBg(task.status))}>
         {task.status}
       </span>
+
+      {/* Assignee */}
+      {task.assignee && <AssigneeBadge name={task.assignee} />}
 
       {/* Focus toggle */}
       <button
@@ -995,6 +1087,14 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
               {tag}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Assignee */}
+      {task.assignee && (
+        <div className="flex items-center gap-1.5 mt-2">
+          <AssigneeBadge name={task.assignee} small />
+          <span className="text-xs text-slate-500 truncate">{task.assignee}</span>
         </div>
       )}
     </div>
