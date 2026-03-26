@@ -648,6 +648,16 @@ function TaskRow({ task, isLast, projects, isFocused, onEdit, onDelete, onStatus
         </a>
       )}
 
+      {/* Jira original status */}
+      {task.jiraStatus && (
+        <span
+          className="text-[10px] font-medium px-2 py-0.5 rounded-full border flex-shrink-0 bg-blue-950/60 text-blue-300 border-blue-500/30"
+          title="Jira status"
+        >
+          {task.jiraStatus}
+        </span>
+      )}
+
       {/* GitLab IID */}
       {task.gitlabIid !== undefined && (
         <a
@@ -1056,6 +1066,11 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
         {task.jiraKey && (
           <span className="text-xs text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded bg-blue-500/10">
             {task.jiraKey}
+          </span>
+        )}
+        {task.jiraStatus && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-950/60 text-blue-300 border-blue-500/30" title="Jira status">
+            {task.jiraStatus}
           </span>
         )}
         {task.gitlabIid !== undefined && (

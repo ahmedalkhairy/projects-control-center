@@ -200,6 +200,7 @@ function issueToTask(issue: JiraIssue, projectId: string, serverUrl: string): Om
     type:          'jira',
     jiraKey:       issue.key,
     jiraLink:      browseUrl,
+    jiraStatus:    fields.status.name,
     tags:          [fields.issuetype.name, ...(fields.labels ?? [])],
     assignee:      fields.assignee?.displayName ?? fields.assignee?.emailAddress ?? undefined,
     sprint:        extractSprint(fields),

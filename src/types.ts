@@ -47,8 +47,10 @@ export interface Task {
   type: TaskType
   jiraKey?: string
   jiraLink?: string
+  jiraStatus?: string      // original Jira status name, e.g. "Ready for Review"
   gitlabIid?: number
   gitlabLink?: string
+  gitlabStatus?: string    // original GitLab state, e.g. "opened"
   // Jira sprint & story metadata
   sprint?: string          // active sprint name, e.g. "Sprint 12"
   storyPoints?: number     // story points estimate

@@ -144,6 +144,7 @@ function issueToTask(issue: GLIssue, projectId: string, cfg: GitLabConfig): Omit
     gitlabLink:  issue.web_url,
     tags:        issue.labels.slice(0, 5),
     assignee:    issue.assignees?.[0]?.name ?? issue.assignees?.[0]?.username ?? undefined,
+    gitlabStatus: issue.state,
   }
 }
 
