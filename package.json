@@ -5,17 +5,23 @@
   "author": "Ahmed Fraije",
   "private": true,
   "main": "dist-electron/electron/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ahmedalkhairy/projects-control-center.git"
+  },
   "scripts": {
     "dev": "vite --host --port 3000",
     "dev:electron": "concurrently -k \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "vite build",
     "build:electron": "vite build && tsc -p tsconfig.electron.json && electron-builder --win",
+    "build:electron:publish": "vite build && tsc -p tsconfig.electron.json && electron-builder --win --publish always",
     "preview": "vite preview"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
+    "electron-updater": "^6.8.3",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -81,6 +87,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ahmedalkhairy",
+      "repo": "projects-control-center"
     }
   }
 }

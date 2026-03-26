@@ -1,11 +1,38 @@
 import { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage } from 'electron'
 import path from 'path'
+import { autoUpdater } from 'electron-updater'
 import { testJiraConnectionNode, fetchJiraIssuesAsTasksNode, fetchJiraNotificationsNode, createJiraIssueNode, updateJiraIssueStatusNode } from './jira'
 import { testGitLabConnectionNode, fetchGitLabIssuesNode, fetchGitLabNotificationsNode, updateGitLabIssueStatusNode } from './gitlab'
 
 // ─── Dev / prod detection ─────────────────────────────────────────────────────
 
 const isDev = !app.isPackaged
+
+// ─── Auto-updater ─────────────────────────────────────────────────────────────
+
+let mainWindow: BrowserWindow | null = null
+
+function setupAutoUpdater(): void {
+  // Silent background check — no dialog, UI handles it
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('update:available', info)
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('update:progress', progress)
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow?.webContents.send('update:downloaded', info)
+  })
+
+  autoUpdater.checkForUpdates().catch(() => {
+    // Silently ignore network errors (offline, etc.)
+  })
+}
 
 // ─── Tray ─────────────────────────────────────────────────────────────────────
 
@@ -105,6 +132,7 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  mainWindow = win
   createTray(win)
 }
 
@@ -148,6 +176,10 @@ ipcMain.handle('gitlab:updateStatus', async (_event, cfg, iid, stateEvent) => {
   return updateGitLabIssueStatusNode(cfg, iid, stateEvent)
 })
 
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall()
+})
+
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
 declare global {
@@ -161,6 +193,7 @@ app.whenReady().then(() => {
   // Remove default menu in production
   if (!isDev) Menu.setApplicationMenu(null)
   createWindow()
+  if (!isDev) setupAutoUpdater()
 })
 
 app.on('before-quit', () => {

@@ -19,6 +19,7 @@ import StandupView from './components/StandupView'
 import MilestonesView from './components/MilestonesView'
 import WeeklyDigestView from './components/WeeklyDigestView'
 import AIAssistantView from './components/AIAssistantView'
+import UpdateBanner from './components/UpdateBanner'
 
 export default function App() {
   const {
@@ -126,6 +127,7 @@ export default function App() {
     <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100 min-w-[1200px]">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
+        <UpdateBanner />
         <Header />
         <main className="flex-1 overflow-y-auto">
           {activeSection === 'focus'      && <FocusView />}

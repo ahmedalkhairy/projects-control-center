@@ -42,4 +42,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App info
   platform: process.platform,
+
+  // Auto-updater
+  updates: {
+    onAvailable:  (cb: (info: unknown) => void) => ipcRenderer.on('update:available',  (_e, info)     => cb(info)),
+    onProgress:   (cb: (info: unknown) => void) => ipcRenderer.on('update:progress',   (_e, progress) => cb(progress)),
+    onDownloaded: (cb: (info: unknown) => void) => ipcRenderer.on('update:downloaded', (_e, info)     => cb(info)),
+    install: () => ipcRenderer.invoke('update:install'),
+  },
 })
