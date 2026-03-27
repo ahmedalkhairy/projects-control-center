@@ -27,7 +27,12 @@ export default function App() {
     integrations, syncJiraIntegration, syncJiraNotifications, jiraSyncInterval,
     syncGitLabIntegration, syncGitLabNotifications,
     tasks, projects, updateTask,
+    darkMode,
   } = useStore()
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', !darkMode)
+  }, [darkMode])
 
   useEffect(() => { requestDesktopPermission() }, [])
 

@@ -1,4 +1,5 @@
 import { useStore, getUnreadCount, getTaskCount, getRepoCount } from '../store'
+import { version } from '../../package.json'
 import { MODULE_DEFS } from '../modules'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -12,6 +13,7 @@ import {
   ChevronRight,
   User,
   Moon,
+  Sun,
   Activity,
   GitBranch,
   Target,
@@ -59,6 +61,8 @@ export default function Sidebar() {
     setActiveProject,
     setActiveSection,
     setCreateProjectOpen,
+    darkMode,
+    toggleDarkMode,
   } = useStore()
 
   // If the active section was disabled, fall back to inbox
@@ -254,7 +258,9 @@ export default function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-semibold text-slate-200 truncate">{userName || 'Me'}</div>
-            <div className="text-xs text-slate-500 truncate">{userEmail || ''}</div>
+            <div className="text-xs text-slate-500 truncate">
+              {userEmail ? `${userEmail}` : ''}{userEmail ? <span className="text-slate-600"> · v{version}</span> : <span className="text-slate-600">v{version}</span>}
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -266,8 +272,9 @@ export default function Sidebar() {
             <button
               className="p-1.5 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
               aria-label="Toggle dark mode"
+              onClick={toggleDarkMode}
             >
-              <Moon size={13} />
+              {darkMode ? <Moon size={13} /> : <Sun size={13} />}
             </button>
             <button
               className="p-1.5 rounded text-slate-500 hover:text-green-400 hover:bg-slate-800 transition-colors"

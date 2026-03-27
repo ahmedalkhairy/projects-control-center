@@ -188,6 +188,10 @@ interface AppState {
   saveAiSession: (projectId: string, messages: AIChatMessage[], existingId?: string) => string
   deleteAiSession: (id: string) => void
   updateAiSessionTitle: (id: string, title: string) => void
+
+  // theme (persisted)
+  darkMode: boolean
+  toggleDarkMode: () => void
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -255,6 +259,7 @@ export const useStore = create<AppState>()(
       notes: [],
       activeNoteId: null,
       aiSessions: [],
+      darkMode: true,
 
       // ui state
       activeSection: 'inbox',
@@ -1224,6 +1229,8 @@ export const useStore = create<AppState>()(
           ),
         })),
 
+      toggleDarkMode: () => set(state => ({ darkMode: !state.darkMode })),
+
       // helper to cycle task status
     }),
     {
@@ -1289,6 +1296,7 @@ export const useStore = create<AppState>()(
         techDebt: state.techDebt,
         milestones: state.milestones,
         aiSessions: state.aiSessions,
+        darkMode: state.darkMode,
       }),
     }
   )
