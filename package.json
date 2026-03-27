@@ -91,7 +91,8 @@
     "publish": {
       "provider": "github",
       "owner": "ahmedalkhairy",
-      "repo": "projects-control-center"
+      "repo": "projects-control-center",
+      "releaseType": "release"
     }
   }
 }
