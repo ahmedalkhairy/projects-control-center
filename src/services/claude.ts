@@ -17,8 +17,36 @@ function makeClient(apiKey: string) {
 function taskSummary(tasks: Task[]): string {
   return tasks.slice(0, 30).map(t =>
     `- [${t.status}] [${t.priority}] ${t.title}` +
+    (t.assignee ? ` (@${t.assignee})` : '') +
     (t.completedAt ? ` (completed ${t.completedAt.slice(0, 10)})` : '')
   ).join('\n')
+}
+
+function groupBySprint(tasks: Task[]): string {
+  const sprintMap = new Map<string, Task[]>()
+  const backlog: Task[] = []
+
+  for (const t of tasks) {
+    if (t.sprint) {
+      const list = sprintMap.get(t.sprint) ?? []
+      list.push(t)
+      sprintMap.set(t.sprint, list)
+    } else {
+      backlog.push(t)
+    }
+  }
+
+  const sections: string[] = []
+
+  for (const [sprintName, sprintTasks] of sprintMap) {
+    sections.push(`Sprint: ${sprintName} (${sprintTasks.length} tasks)\n${taskSummary(sprintTasks)}`)
+  }
+
+  if (backlog.length > 0) {
+    sections.push(`Backlog / No Sprint (${backlog.length} tasks)\n${taskSummary(backlog)}`)
+  }
+
+  return sections.join('\n\n')
 }
 
 // ─── Standup draft ─────────────────────────────────────────────────────────────
@@ -161,21 +189,26 @@ export async function streamChat(params: {
   const openDebt   = techDebt.filter(d => d.status !== 'resolved')
   const activeMilestones = milestones.filter(m => m.status !== 'completed')
 
+  const sprintNames = [...new Set(openTasks.map(t => t.sprint).filter(Boolean))]
+  const teamMembers = [...new Set(openTasks.map(t => t.assignee).filter(Boolean))]
+
   const systemInstruction = `You are an AI assistant embedded in a developer operations dashboard called "Control Center".
 
 Current project: ${project.name}
 ${project.description ? `Project description: ${project.description}` : ''}
 
 Project context:
-- Open tasks: ${openTasks.length} (${tasks.filter(t => t.priority === 'critical' && t.status !== 'done').length} critical)
+- Total open tasks (entire team): ${openTasks.length} (${tasks.filter(t => t.priority === 'critical' && t.status !== 'done').length} critical)
 - Completed tasks: ${doneTasks.length}
 - In-progress tasks: ${tasks.filter(t => t.status === 'in-progress').length}
+- Active sprints: ${sprintNames.length > 0 ? sprintNames.join(', ') : 'none detected'}
+- Team members with tasks: ${teamMembers.length > 0 ? teamMembers.join(', ') : 'unknown'}
 - Tech debt items: ${openDebt.length} open
 - Active milestones: ${activeMilestones.length}
 - Recent inbox messages: ${recentInbox.length}
 
-Open tasks (up to 20):
-${taskSummary(openTasks.slice(0, 20))}
+All open tasks grouped by sprint (team-wide):
+${groupBySprint(openTasks.slice(0, 60))}
 
 ${activeMilestones.length > 0 ? `Active milestones:
 ${activeMilestones.map(m => `- ${m.title} (due: ${m.dueDate}, status: ${m.status})`).join('\n')}` : ''}
@@ -183,7 +216,7 @@ ${activeMilestones.map(m => `- ${m.title} (due: ${m.dueDate}, status: ${m.status
 ${openDebt.length > 0 ? `Top tech debt items:
 ${openDebt.slice(0, 5).map(d => `- [${d.category}] ${d.title}`).join('\n')}` : ''}
 
-You have full knowledge of the project state above. Answer questions, provide advice, help prioritize work, write task descriptions, summarize status, or assist with any project-related questions. Be concise and actionable.`
+You have full knowledge of the entire team's tasks above, grouped by sprint. Each task shows the assignee with @name. When asked about sprint analysis, task distribution, or team workload — answer at the team level, not just one person. Be concise and actionable.`
 
   try {
     const model = genAI.getGenerativeModel({

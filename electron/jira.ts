@@ -217,7 +217,7 @@ export async function fetchJiraIssuesAsTasksNode(
 ): Promise<{ ok: boolean; tasks?: any[]; error?: string }> {
   try {
     const base   = normalizeUrl(cfg.serverUrl)
-    const jql    = `project = "${cfg.projectKey}" AND assignee = currentUser() ORDER BY updated DESC`
+    const jql    = `project = "${cfg.projectKey}" ORDER BY updated DESC`
     const fields = [
       'summary', 'description', 'status', 'priority', 'issuetype', 'assignee', 'labels', 'created', 'updated',
       'customfield_10020',  // sprint
