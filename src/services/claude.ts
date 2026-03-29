@@ -26,7 +26,8 @@ function taskSummary(tasks: Task[]): string {
       ? `\n    Description: ${t.description.replace(/\s+/g, ' ').slice(0, 300)}${t.description.length > 300 ? '…' : ''}`
       : ''
 
-    return `- [${t.status}] [${t.priority}] ${t.title}` +
+    const displayStatus = t.jiraStatus ?? t.status
+    return `- [${displayStatus}] [${t.priority}] ${t.title}` +
       (t.jiraKey ? ` (${t.jiraKey})` : '') +
       (meta ? ` (${meta})` : '') +
       desc

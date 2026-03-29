@@ -144,7 +144,15 @@ function mapPriority(jiraPriority: JiraPriority | null): Priority {
 function mapStatus(jiraStatus: JiraStatus): TaskStatus {
   const name = jiraStatus.name.toLowerCase()
   if (name.includes('done') || name.includes('closed') || name.includes('resolved') || name.includes('complete')) return 'done'
-  if (name.includes('progress') || name.includes('review') || name.includes('testing') || name.includes('qa')) return 'in-progress'
+  if (
+    name.includes('progress') ||
+    name.includes('review') ||
+    name.includes('testing') ||
+    name.includes('qa') ||
+    name.includes('blocked') ||
+    name.includes('internal') ||
+    name.includes('ready')
+  ) return 'in-progress'
   return 'todo'
 }
 

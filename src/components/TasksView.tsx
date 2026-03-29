@@ -649,14 +649,23 @@ function TaskRow({ task, isLast, projects, isFocused, onEdit, onDelete, onStatus
       )}
 
       {/* Jira original status */}
-      {task.jiraStatus && (
-        <span
-          className="text-[10px] font-medium px-2 py-0.5 rounded-full border flex-shrink-0 bg-blue-950/60 text-blue-300 border-blue-500/30"
-          title="Jira status"
-        >
-          {task.jiraStatus}
-        </span>
-      )}
+      {task.jiraStatus && (() => {
+        const s = task.jiraStatus.toLowerCase()
+        const cls = s.includes('block')
+          ? 'bg-red-950/60 text-red-300 border-red-500/30'
+          : s.includes('internal') || s.includes('ready')
+          ? 'bg-amber-950/60 text-amber-300 border-amber-500/30'
+          : s.includes('review') || s.includes('testing') || s.includes('qa')
+          ? 'bg-violet-950/60 text-violet-300 border-violet-500/30'
+          : s.includes('progress')
+          ? 'bg-blue-950/60 text-blue-300 border-blue-500/30'
+          : 'bg-slate-800/60 text-slate-400 border-slate-600/30'
+        return (
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border flex-shrink-0 ${cls}`} title="Jira status">
+            {task.jiraStatus}
+          </span>
+        )
+      })()}
 
       {/* GitLab IID */}
       {task.gitlabIid !== undefined && (
@@ -1068,11 +1077,23 @@ function KanbanCard({ task, isDragging, onDragStart, onDragEnd, onEdit, onDelete
             {task.jiraKey}
           </span>
         )}
-        {task.jiraStatus && (
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-950/60 text-blue-300 border-blue-500/30" title="Jira status">
-            {task.jiraStatus}
-          </span>
-        )}
+        {task.jiraStatus && (() => {
+          const s = task.jiraStatus.toLowerCase()
+          const cls = s.includes('block')
+            ? 'bg-red-950/60 text-red-300 border-red-500/30'
+            : s.includes('internal') || s.includes('ready')
+            ? 'bg-amber-950/60 text-amber-300 border-amber-500/30'
+            : s.includes('review') || s.includes('testing') || s.includes('qa')
+            ? 'bg-violet-950/60 text-violet-300 border-violet-500/30'
+            : s.includes('progress')
+            ? 'bg-blue-950/60 text-blue-300 border-blue-500/30'
+            : 'bg-slate-800/60 text-slate-400 border-slate-600/30'
+          return (
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${cls}`} title="Jira status">
+              {task.jiraStatus}
+            </span>
+          )
+        })()}
         {task.gitlabIid !== undefined && (
           <span className="text-xs text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded bg-orange-500/10">
             GL-{task.gitlabIid}
