@@ -15,11 +15,22 @@ function makeClient(apiKey: string) {
 // ─── Context builders ──────────────────────────────────────────────────────────
 
 function taskSummary(tasks: Task[]): string {
-  return tasks.slice(0, 30).map(t =>
-    `- [${t.status}] [${t.priority}] ${t.title}` +
-    (t.assignee ? ` (@${t.assignee})` : '') +
-    (t.completedAt ? ` (completed ${t.completedAt.slice(0, 10)})` : '')
-  ).join('\n')
+  return tasks.slice(0, 30).map(t => {
+    const meta = [
+      t.assignee ? `@${t.assignee}` : '',
+      t.storyPoints != null ? `${t.storyPoints}sp` : '',
+      t.completedAt ? `completed ${t.completedAt.slice(0, 10)}` : '',
+    ].filter(Boolean).join(', ')
+
+    const desc = t.description
+      ? `\n    Description: ${t.description.replace(/\s+/g, ' ').slice(0, 300)}${t.description.length > 300 ? '…' : ''}`
+      : ''
+
+    return `- [${t.status}] [${t.priority}] ${t.title}` +
+      (t.jiraKey ? ` (${t.jiraKey})` : '') +
+      (meta ? ` (${meta})` : '') +
+      desc
+  }).join('\n')
 }
 
 function groupBySprint(tasks: Task[]): string {
