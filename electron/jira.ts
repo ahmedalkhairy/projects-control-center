@@ -212,12 +212,13 @@ export async function createJiraIssueNode(
 export async function fetchJiraIssuesAsTasksNode(
   cfg:       JiraConfig,
   projectId: string,
-  maxResults = 100,
+  maxResults = 200,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<{ ok: boolean; tasks?: any[]; error?: string }> {
   try {
     const base   = normalizeUrl(cfg.serverUrl)
-    const jql    = `project = "${cfg.projectKey}" ORDER BY updated DESC`
+    // Fetch: all open-sprint tasks + future sprint tasks + recent backlog (updated in last 60 days)
+    const jql    = `project = "${cfg.projectKey}" AND (sprint in openSprints() OR sprint in futureSprints() OR (sprint is EMPTY AND updated >= -60d)) ORDER BY updated DESC`
     const fields = [
       'summary', 'description', 'status', 'priority', 'issuetype', 'assignee', 'labels', 'created', 'updated',
       'customfield_10020',  // sprint

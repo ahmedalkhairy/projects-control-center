@@ -448,7 +448,7 @@ export async function fetchJiraIssues(
 export async function fetchJiraIssuesAsTasks(
   cfg: JiraConfig,
   projectId: string,
-  maxResults = 100,
+  maxResults = 200,
 ): Promise<Array<Omit<Task, 'createdAt'>>> {
   // ── Electron: use IPC ──
   const api = electronAPI()
@@ -459,7 +459,8 @@ export async function fetchJiraIssuesAsTasks(
   }
 
   // ── Browser dev: use Vite proxy ──
-  const jql    = `project = "${cfg.projectKey}" ORDER BY updated DESC`
+  // Fetch: all open-sprint tasks + future sprint tasks + recent backlog (updated in last 60 days)
+  const jql    = `project = "${cfg.projectKey}" AND (sprint in openSprints() OR sprint in futureSprints() OR (sprint is EMPTY AND updated >= -60d)) ORDER BY updated DESC`
   const fields = [
     'summary', 'description', 'status', 'priority', 'issuetype', 'assignee', 'labels', 'created', 'updated',
     'customfield_10020',  // sprint
