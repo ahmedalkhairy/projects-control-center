@@ -480,79 +480,51 @@ function ListView({
         </div>
       </div>
 
-      {/* Assignee filter */}
-      {allAssignees.length > 0 && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-xs text-slate-600 flex-shrink-0">Assignee:</span>
-          <button
-            onClick={() => setAssigneeFilter('all')}
-            className={clsx(
-              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-              assigneeFilter === 'all'
-                ? 'bg-slate-700 text-slate-100 border-slate-600'
-                : 'text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-600'
-            )}
-          >
-            Everyone
-          </button>
-          {allAssignees.map(name => (
-            <button
-              key={name}
-              onClick={() => setAssigneeFilter(assigneeFilter === name ? 'all' : name)}
-              className={clsx(
-                'flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                assigneeFilter === name
-                  ? 'bg-slate-700 text-slate-100 border-slate-600'
-                  : 'text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
-              )}
-            >
-              <AssigneeBadge name={name} small />
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Assignee + Sprint dropdowns */}
+      {(allAssignees.length > 0 || allSprints.length > 0) && (
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          {allAssignees.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 flex-shrink-0">Assignee:</span>
+              <select
+                value={assigneeFilter}
+                onChange={e => setAssigneeFilter(e.target.value)}
+                className={clsx(
+                  'bg-slate-800 border rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500',
+                  assigneeFilter !== 'all'
+                    ? 'border-blue-500/50 text-slate-100'
+                    : 'border-slate-700 text-slate-400 hover:border-slate-600'
+                )}
+              >
+                <option value="all">Everyone</option>
+                {allAssignees.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
-      {/* Sprint filter */}
-      {allSprints.length > 0 && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-xs text-slate-600 flex-shrink-0">Sprint:</span>
-          <button
-            onClick={() => setSprintFilter('all')}
-            className={clsx(
-              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-              sprintFilter === 'all'
-                ? 'bg-violet-600/20 text-violet-300 border-violet-500/40'
-                : 'text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-600'
-            )}
-          >
-            All Sprints
-          </button>
-          {allSprints.map(sprint => (
-            <button
-              key={sprint}
-              onClick={() => setSprintFilter(sprintFilter === sprint ? 'all' : sprint)}
-              className={clsx(
-                'flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                sprintFilter === sprint
-                  ? 'bg-violet-600/20 text-violet-300 border-violet-500/40'
-                  : 'text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
-              )}
-            >
-              🏃 {sprint}
-            </button>
-          ))}
-          <button
-            onClick={() => setSprintFilter(sprintFilter === '__none__' ? 'all' : '__none__')}
-            className={clsx(
-              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-              sprintFilter === '__none__'
-                ? 'bg-slate-700 text-slate-100 border-slate-600'
-                : 'text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-600'
-            )}
-          >
-            Backlog
-          </button>
+          {allSprints.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 flex-shrink-0">Sprint:</span>
+              <select
+                value={sprintFilter}
+                onChange={e => setSprintFilter(e.target.value)}
+                className={clsx(
+                  'bg-slate-800 border rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500',
+                  sprintFilter !== 'all'
+                    ? 'border-violet-500/50 text-slate-100'
+                    : 'border-slate-700 text-slate-400 hover:border-slate-600'
+                )}
+              >
+                <option value="all">All Sprints</option>
+                {allSprints.map(sprint => (
+                  <option key={sprint} value={sprint}>{sprint}</option>
+                ))}
+                <option value="__none__">Backlog (no sprint)</option>
+              </select>
+            </div>
+          )}
         </div>
       )}
 
