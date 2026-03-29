@@ -115,6 +115,7 @@ export default function TasksView() {
   const [tabFilter, setTabFilter] = useState<TabFilter>('all')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
+  const [sprintFilter, setSprintFilter] = useState<string>('all')
   const [quickCreate, setQuickCreate] = useState('')
   const quickCreateRef = useRef<HTMLInputElement>(null)
   const [reminderTaskId, setReminderTaskId] = useState<string | null>(null)
@@ -129,11 +130,18 @@ export default function TasksView() {
     new Set(projectTasks.map(t => t.assignee).filter(Boolean) as string[])
   ).sort()
 
+  // Unique sprints for filter dropdown
+  const allSprints = Array.from(
+    new Set(projectTasks.map(t => t.sprint).filter(Boolean) as string[])
+  )
+
   const filtered = projectTasks
     .filter(t => {
       if (tabFilter !== 'all' && t.status !== tabFilter) return false
       if (typeFilter !== 'all' && t.type !== typeFilter) return false
       if (assigneeFilter !== 'all' && t.assignee !== assigneeFilter) return false
+      if (sprintFilter === '__none__' && t.sprint) return false
+      if (sprintFilter !== 'all' && sprintFilter !== '__none__' && t.sprint !== sprintFilter) return false
       return true
     })
     .sort((a, b) => {
@@ -285,6 +293,9 @@ export default function TasksView() {
           assigneeFilter={assigneeFilter}
           setAssigneeFilter={setAssigneeFilter}
           allAssignees={allAssignees}
+          sprintFilter={sprintFilter}
+          setSprintFilter={setSprintFilter}
+          allSprints={allSprints}
           TAB_ITEMS={TAB_ITEMS}
           quickCreate={quickCreate}
           setQuickCreate={setQuickCreate}
@@ -340,6 +351,9 @@ interface ListViewProps {
   assigneeFilter: string
   setAssigneeFilter: (f: string) => void
   allAssignees: string[]
+  sprintFilter: string
+  setSprintFilter: (f: string) => void
+  allSprints: string[]
   TAB_ITEMS: { key: TabFilter; label: string }[]
   quickCreate: string
   setQuickCreate: (v: string) => void
@@ -367,6 +381,9 @@ function ListView({
   assigneeFilter,
   setAssigneeFilter,
   allAssignees,
+  sprintFilter,
+  setSprintFilter,
+  allSprints,
   TAB_ITEMS,
   quickCreate,
   setQuickCreate,
@@ -493,6 +510,49 @@ function ListView({
               {name}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Sprint filter */}
+      {allSprints.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-xs text-slate-600 flex-shrink-0">Sprint:</span>
+          <button
+            onClick={() => setSprintFilter('all')}
+            className={clsx(
+              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+              sprintFilter === 'all'
+                ? 'bg-violet-600/20 text-violet-300 border-violet-500/40'
+                : 'text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-600'
+            )}
+          >
+            All Sprints
+          </button>
+          {allSprints.map(sprint => (
+            <button
+              key={sprint}
+              onClick={() => setSprintFilter(sprintFilter === sprint ? 'all' : sprint)}
+              className={clsx(
+                'flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                sprintFilter === sprint
+                  ? 'bg-violet-600/20 text-violet-300 border-violet-500/40'
+                  : 'text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
+              )}
+            >
+              🏃 {sprint}
+            </button>
+          ))}
+          <button
+            onClick={() => setSprintFilter(sprintFilter === '__none__' ? 'all' : '__none__')}
+            className={clsx(
+              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+              sprintFilter === '__none__'
+                ? 'bg-slate-700 text-slate-100 border-slate-600'
+                : 'text-slate-500 border-slate-700 hover:text-slate-300 hover:border-slate-600'
+            )}
+          >
+            Backlog
+          </button>
         </div>
       )}
 
